@@ -11,7 +11,7 @@ fastify.get('/', (req, res) => {
 
 const start = async () => {
     try {
-        await fastify.listen({ port: process.env.PORT });
+        await fastify.listen({ port: process.env.PORT, host:'0.0.0.0'});
         console.log('Application started')
     } catch (error) {
        fastify.log.error(error);
