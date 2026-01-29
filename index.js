@@ -5,12 +5,14 @@ const fastify = Fastify({
 })
 
 fastify.get('/', (req, res) => {
+    console.log('Hello world')
     res.send({ hello: 'worlds'})
 })
 
 const start = async () => {
     try {
         await fastify.listen({ port: process.env.PORT });
+        console.log('Application started')
     } catch (error) {
        fastify.log.error(error);
        process.exit(1);
