@@ -18,9 +18,6 @@ client.on('ready', () => {
 })
 
 client.on('messageCreate', (msg) => {
-    console.log('Message: ', msg.content);
-    console.log('Author', msg.author);
-    console.log('User: ', client.user);
     if (msg.author.tag != client.user.tag) {
         let historyMessages = messages.find(message => message.author === msg.author.tag);
 
@@ -35,10 +32,10 @@ client.on('messageCreate', (msg) => {
         } else {
             historyMessages.history.push({msg: msg, content: msg.content})
         }
+        console.log('Mensages desse Author', historyMessages)
 
         historyMessages = messages.find(message => message.author === msg.author.tag);
 
-        console.log('Mensages desse Author', historyMessages)
         
         if(historyMessages.history.length === 1) {
             return msg.reply(`Hello ${msg.author.username}, what you want to do?`);
