@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits } from 'discord.js';
+import https from 'node:https';
 
 const messages = [
     {
@@ -38,9 +39,26 @@ client.on('messageCreate', (msg) => {
 
         
         if(historyMessages.history.length === 1) {
-            return msg.reply(`Hello ${msg.author.username}, what you want to do?`);
+            return msg.reply(`Hello ${msg.author.username}, ready to receive beauty message to warm your day?`);
         } else  {
-            msg.channel.send('Initiating your process')
+            try {
+                const message = https.get('https://www.positive-api.online/phrase', (res) => {
+                    let data = '';
+
+                    res.on('data', (chunck) => {
+                        data += chunck;
+                    });
+
+                    res.on('end', (error) => {
+                        if(error) {
+                            msg.channel.send(error.message)
+                        }
+                        msg.channel.send(JSON.parse(data).text)
+                    });
+                })
+            } catch (error) {
+                console.log(error)
+            }
         }
 
     }
