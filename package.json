@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "main": "index.js",
   "type": "module",
+  "scripts": {
+    "start": "fastify start src/index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
   "dependencies": {
     "accepts": "^2.0.0",
     "body-parser": "^2.2.2",
@@ -25,6 +29,7 @@
     "etag": "^1.8.1",
     "express": "^5.2.1",
     "fastify": "^5.7.2",
+    "fastify-cli": "^7.4.1",
     "finalhandler": "^2.1.1",
     "forwarded": "^0.2.0",
     "fresh": "^2.0.0",
@@ -70,9 +75,6 @@
     "unpipe": "^1.0.0",
     "vary": "^1.1.2",
     "wrappy": "^1.0.2"
-  },
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
     "type": "git",
