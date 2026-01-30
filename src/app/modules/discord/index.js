@@ -42,7 +42,7 @@ client.on('messageCreate', (msg) => {
             return msg.reply(`Hello ${msg.author.username}, ready to receive beauty message to warm your day?`);
         } else  {
             try {
-                const message = https.get('https://www.positive-api.online/phrase', (res) => {
+                https.get('https://www.positive-api.online/phrase', (res) => {
                     let data = '';
 
                     res.on('data', (chunck) => {
