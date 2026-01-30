@@ -10,7 +10,7 @@ client.on('ready', () => {
 
 client.on('messageCreate', (msg) => {
     console.log('Message: ', msg.content);
-    if (msg.content === '!Oi') {
+    if (msg.author != client.user.tag) {
         msg.reply('Hello!')
         msg.channel.send('How are you?')
     }
