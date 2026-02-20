@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import Fastify from "fastify"
 import routes from "./app/routes/index.js";
 import client from './app/modules/discord/index.js'
