@@ -3,6 +3,7 @@ import Fastify from "fastify"
 import routes from "./app/routes/index.js";
 import nexus from './app/modules/nexus/index.js'
 import mongodb from './app/modules/mongodb/index.js';
+import cmdhub from './app/modules/cmdhub/index.js';
 import * as levelService from './app/modules/nexus/services/levelService.js';
 import * as chatHistoryService from './app/modules/nexus/services/chatHistoryService.js';
 
@@ -20,6 +21,9 @@ const start = async () => {
         logger.info('MONGO', '🍃 Conectando ao MongoDB...');
         await mongodb.connect();
         logger.db.connected('square-cloud');
+        
+        // Initialize cmdhub with Discord token for REST API
+        cmdhub.init(process.env.DISCORD_SECRET_KEY);
         
         // Initialize and start Nexus
         await nexus.init({

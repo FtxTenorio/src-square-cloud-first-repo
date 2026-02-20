@@ -1,9 +1,13 @@
 import redis from '../modules/redis/index.js';
+import cmdhub from '../modules/cmdhub/index.js';
 
 const CACHE_KEY = 'hello_world_cache';
 const CACHE_TTL = 60; // seconds
 
 async function routes(fastify, options) {
+    // ═══════════════════════════════════════════════════════════
+    // HEALTH CHECK / ROOT
+    // ═══════════════════════════════════════════════════════════
     fastify.get('/', async (req, reply) => {
         try {
             // Try to get from Redis cache
@@ -41,6 +45,11 @@ async function routes(fastify, options) {
             return {error: 'No Valid Body Was Sent!'}
         }
     })
+    
+    // ═══════════════════════════════════════════════════════════
+    // CMDHUB - Command Management API
+    // ═══════════════════════════════════════════════════════════
+    cmdhub.registerRoutes(fastify);
 }
 
 export default routes;

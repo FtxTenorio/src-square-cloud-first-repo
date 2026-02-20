@@ -21,6 +21,9 @@ import ai from './ai/index.js';
 // Utils
 import logger from './utils/logger.js';
 
+// External modules
+import cmdhub from '../cmdhub/index.js';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Module state
@@ -137,6 +140,9 @@ function setupCoreEvents(client, options) {
     // Ready event
     client.on(Events.ClientReady, async () => {
         logger.discord.ready(client.user.tag, client.guilds.cache.size);
+        
+        // Set cmdhub application ID for Discord API calls
+        cmdhub.commandService.setApplicationId(client.application.id);
         
         // Set activity rotation
         const activities = config.discord.activities;
