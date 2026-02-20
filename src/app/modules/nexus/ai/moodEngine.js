@@ -66,8 +66,16 @@ function getVelhaCounter(channelId) {
 /**
  * Check for "velha" triggers and increment counter
  * Returns true if mood should change to chorona
+ * @param {string} channelId
+ * @param {string} message
+ * @param {string} currentMood - If already 'chorona', don't increment counter
  */
-function checkVelhaTrigger(channelId, message) {
+function checkVelhaTrigger(channelId, message, currentMood) {
+    // If already in chorona mode, don't bother with the counter
+    if (currentMood === 'chorona') {
+        return { triggered: false, count: 0, alreadyChorona: true };
+    }
+    
     const lowerMsg = message.toLowerCase();
     
     const hasVelhaTrigger = VELHA_TRIGGERS.some(trigger => lowerMsg.includes(trigger));
@@ -344,7 +352,8 @@ export async function analyzeMood(channelId, message, options = {}) {
     }
     
     // 1. Check "velha" trigger (special case with counter)
-    const velhaCheck = checkVelhaTrigger(channelId, message);
+    // Pass currentMood to avoid incrementing if already chorona
+    const velhaCheck = checkVelhaTrigger(channelId, message, previousMood);
     if (velhaCheck.triggered) {
         state.currentMood = 'chorona';
         state.lastChange = Date.now();
