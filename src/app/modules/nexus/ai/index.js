@@ -122,15 +122,15 @@ export async function generateResponse(message, history = [], options = {}) {
 /**
  * Get current mood for a channel
  */
-export function getChannelMood(channelId) {
-    return moodEngine.getCurrentMood(channelId);
+export async function getChannelMood(channelId) {
+    return await moodEngine.getCurrentMood(channelId);
 }
 
 /**
  * Force set mood for a channel
  */
-export function setChannelMood(channelId, mood) {
-    return moodEngine.setMood(channelId, mood);
+export async function setChannelMood(channelId, mood, guildId = null) {
+    return await moodEngine.setMood(channelId, mood, guildId);
 }
 
 /**

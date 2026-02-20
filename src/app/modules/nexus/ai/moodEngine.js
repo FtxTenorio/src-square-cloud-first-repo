@@ -1,16 +1,15 @@
 /**
  * Nexus AI - Mood Engine
  * Analyzes conversations and dynamically changes Frieren's mood per channel
+ * Persists mood state to MongoDB
  */
 
 import logger from '../utils/logger.js';
 import axios from 'axios';
+import ChannelMood from '../models/ChannelMood.js';
 
-// Channel mood state storage
-const channelMoods = new Map();
-
-// "Velha" counter per channel (3 strikes = chorona mode)
-const velhaCounters = new Map();
+// In-memory cache (synced with DB)
+const channelMoodsCache = new Map();
 
 // Keywords that trigger moods without AI analysis
 const MOOD_KEYWORDS = {
@@ -42,37 +41,96 @@ const DESCULPA_TRIGGERS = [
 ];
 
 /**
- * Get or create channel mood state
+ * Get or create channel mood state (from DB with cache)
  */
-function getChannelState(channelId) {
-    if (!channelMoods.has(channelId)) {
-        channelMoods.set(channelId, {
+async function getChannelState(channelId, guildId = 'DM') {
+    // Check cache first
+    if (channelMoodsCache.has(channelId)) {
+        return channelMoodsCache.get(channelId);
+    }
+    
+    try {
+        // Try to find in DB
+        let moodDoc = await ChannelMood.findOne({ channelId });
+        
+        if (!moodDoc) {
+            // Create new entry
+            moodDoc = await ChannelMood.create({
+                channelId,
+                guildId,
+                currentMood: 'friendly',
+                velhaCounter: 0,
+                messagesSinceMoodChange: 0
+            });
+            logger.debug('MOOD', `Novo canal registrado: ${channelId}`);
+        }
+        
+        // Cache it
+        const state = {
+            currentMood: moodDoc.currentMood,
+            velhaCounter: moodDoc.velhaCounter,
+            lastChange: moodDoc.lastChange,
+            messagesSinceMoodChange: moodDoc.messagesSinceMoodChange,
+            stats: moodDoc.stats,
+            transitionMessage: null,
+            _id: moodDoc._id
+        };
+        
+        channelMoodsCache.set(channelId, state);
+        return state;
+    } catch (error) {
+        logger.error('MOOD', `Erro ao carregar mood do DB: ${error.message}`);
+        // Fallback to in-memory
+        const fallback = {
             currentMood: 'friendly',
+            velhaCounter: 0,
             lastChange: Date.now(),
             messagesSinceMoodChange: 0,
             transitionMessage: null
-        });
+        };
+        channelMoodsCache.set(channelId, fallback);
+        return fallback;
     }
-    return channelMoods.get(channelId);
+}
+
+/**
+ * Save channel mood state to DB
+ */
+async function saveChannelState(channelId, state) {
+    try {
+        await ChannelMood.findOneAndUpdate(
+            { channelId },
+            {
+                currentMood: state.currentMood,
+                velhaCounter: state.velhaCounter,
+                lastChange: state.lastChange || new Date(),
+                messagesSinceMoodChange: state.messagesSinceMoodChange,
+                stats: state.stats
+            },
+            { upsert: true }
+        );
+    } catch (error) {
+        logger.error('MOOD', `Erro ao salvar mood no DB: ${error.message}`);
+    }
 }
 
 /**
  * Get velha counter for channel
  */
-function getVelhaCounter(channelId) {
-    return velhaCounters.get(channelId) || 0;
+async function getVelhaCounter(channelId) {
+    const state = await getChannelState(channelId);
+    return state.velhaCounter || 0;
 }
 
 /**
  * Check for "velha" triggers and increment counter
- * Returns true if mood should change to chorona
- * @param {string} channelId
+ * Works directly with the state object (already loaded)
+ * @param {object} state - Channel state object
  * @param {string} message
- * @param {string} currentMood - If already 'chorona', don't increment counter
  */
-function checkVelhaTrigger(channelId, message, currentMood) {
+function checkVelhaTrigger(state, message) {
     // If already in chorona mode, don't bother with the counter
-    if (currentMood === 'chorona') {
+    if (state.currentMood === 'chorona') {
         return { triggered: false, count: 0, alreadyChorona: true };
     }
     
@@ -81,21 +139,24 @@ function checkVelhaTrigger(channelId, message, currentMood) {
     const hasVelhaTrigger = VELHA_TRIGGERS.some(trigger => lowerMsg.includes(trigger));
     
     if (hasVelhaTrigger) {
-        const currentCount = getVelhaCounter(channelId) + 1;
-        velhaCounters.set(channelId, currentCount);
+        state.velhaCounter = (state.velhaCounter || 0) + 1;
         
-        logger.debug('MOOD', `"Velha" detectado! Contador: ${currentCount}/3`);
+        // Update stats
+        if (!state.stats) state.stats = {};
+        state.stats.timesCalledVelha = (state.stats.timesCalledVelha || 0) + 1;
         
-        if (currentCount >= 3) {
+        logger.debug('MOOD', `"Velha" detectado! Contador: ${state.velhaCounter}/3`);
+        
+        if (state.velhaCounter >= 3) {
             // Reset counter and trigger chorona mode
-            velhaCounters.set(channelId, 0);
-            return { triggered: true, count: currentCount };
+            state.velhaCounter = 0;
+            return { triggered: true, count: 3 };
         }
         
-        return { triggered: false, count: currentCount };
+        return { triggered: false, count: state.velhaCounter };
     }
     
-    return { triggered: false, count: getVelhaCounter(channelId) };
+    return { triggered: false, count: state.velhaCounter || 0 };
 }
 
 /**
@@ -285,24 +346,26 @@ function getTransitionMessage(fromMood, toMood, reason) {
 /**
  * Main mood analysis function
  * Call this before generating a response
+ * Persists mood changes to MongoDB
  */
 export async function analyzeMood(channelId, message, options = {}) {
-    const state = getChannelState(channelId);
+    const state = await getChannelState(channelId, options.guildId);
     const previousMood = state.currentMood;
+    let moodChanged = false;
     
     // 0. Check for apology first - can calm her down
     if (checkDesculpaTrigger(message)) {
-        const velhaCount = getVelhaCounter(channelId);
-        
         // Reset velha counter
-        if (velhaCount > 0) {
-            velhaCounters.set(channelId, 0);
+        if (state.velhaCounter > 0) {
+            state.velhaCounter = 0;
             logger.debug('MOOD', `Desculpa aceita! Contador de "velha" resetado`);
         }
         
         // If in a bad mood, go back one step (not directly to friendly)
         if (previousMood === 'chorona') {
             state.currentMood = 'brava'; // chorona -> brava (still a bit upset)
+            state.lastChange = new Date();
+            state.messagesSinceMoodChange = 0;
             
             const apologyResponses = [
                 '*sniff* ...Tá... tá bom. Mas não faz de novo.',
@@ -312,7 +375,15 @@ export async function analyzeMood(channelId, message, options = {}) {
             ];
             state.transitionMessage = apologyResponses[Math.floor(Math.random() * apologyResponses.length)];
             
+            // Update stats
+            if (!state.stats) state.stats = {};
+            state.stats.totalMoodChanges = (state.stats.totalMoodChanges || 0) + 1;
+            
             logger.info('MOOD', `😤 Humor mudou: chorona → brava (desculpa)`);
+            
+            // Save to DB
+            await saveChannelState(channelId, state);
+            channelMoodsCache.set(channelId, state);
             
             return {
                 mood: 'brava',
@@ -323,6 +394,8 @@ export async function analyzeMood(channelId, message, options = {}) {
             };
         } else if (previousMood === 'brava') {
             state.currentMood = 'friendly';
+            state.lastChange = new Date();
+            state.messagesSinceMoodChange = 0;
             
             const forgivenResponses = [
                 '...Tudo bem. Só não me irrite de novo.',
@@ -332,7 +405,15 @@ export async function analyzeMood(channelId, message, options = {}) {
             ];
             state.transitionMessage = forgivenResponses[Math.floor(Math.random() * forgivenResponses.length)];
             
+            // Update stats
+            if (!state.stats) state.stats = {};
+            state.stats.totalMoodChanges = (state.stats.totalMoodChanges || 0) + 1;
+            
             logger.info('MOOD', `🧝‍♀️ Humor mudou: brava → friendly (desculpa)`);
+            
+            // Save to DB
+            await saveChannelState(channelId, state);
+            channelMoodsCache.set(channelId, state);
             
             return {
                 mood: 'friendly',
@@ -343,7 +424,9 @@ export async function analyzeMood(channelId, message, options = {}) {
             };
         }
         
-        // Already friendly or sage, just acknowledge
+        // Already friendly or sage, just acknowledge (save counter reset)
+        await saveChannelState(channelId, state);
+        
         return {
             mood: previousMood,
             changed: false,
@@ -352,11 +435,10 @@ export async function analyzeMood(channelId, message, options = {}) {
     }
     
     // 1. Check "velha" trigger (special case with counter)
-    // Pass currentMood to avoid incrementing if already chorona
-    const velhaCheck = checkVelhaTrigger(channelId, message, previousMood);
+    const velhaCheck = checkVelhaTrigger(state, message);
     if (velhaCheck.triggered) {
         state.currentMood = 'chorona';
-        state.lastChange = Date.now();
+        state.lastChange = new Date();
         state.messagesSinceMoodChange = 0;
         
         const velhaTriggeredMessages = [
@@ -368,7 +450,16 @@ export async function analyzeMood(channelId, message, options = {}) {
         ];
         state.transitionMessage = velhaTriggeredMessages[Math.floor(Math.random() * velhaTriggeredMessages.length)];
         
+        // Update stats
+        if (!state.stats) state.stats = {};
+        state.stats.totalMoodChanges = (state.stats.totalMoodChanges || 0) + 1;
+        state.stats.timesChorona = (state.stats.timesChorona || 0) + 1;
+        
         logger.info('MOOD', `😭 Humor mudou: ${previousMood} → chorona (3x velha)`);
+        
+        // Save to DB
+        await saveChannelState(channelId, state);
+        channelMoodsCache.set(channelId, state);
         
         return {
             mood: 'chorona',
@@ -382,15 +473,31 @@ export async function analyzeMood(channelId, message, options = {}) {
     // Return current velha count for status tracking
     const currentVelhaCount = velhaCheck.count;
     
+    // Save velha counter if it changed
+    if (velhaCheck.count > 0) {
+        await saveChannelState(channelId, state);
+        channelMoodsCache.set(channelId, state);
+    }
+    
     // 2. Check keyword triggers (fast)
     const keywordMood = checkKeywordTriggers(message);
     if (keywordMood && keywordMood !== previousMood) {
         state.currentMood = keywordMood;
-        state.lastChange = Date.now();
+        state.lastChange = new Date();
         state.messagesSinceMoodChange = 0;
         state.transitionMessage = getTransitionMessage(previousMood, keywordMood, 'keyword');
         
+        // Update stats
+        if (!state.stats) state.stats = {};
+        state.stats.totalMoodChanges = (state.stats.totalMoodChanges || 0) + 1;
+        if (keywordMood === 'chorona') state.stats.timesChorona = (state.stats.timesChorona || 0) + 1;
+        if (keywordMood === 'brava') state.stats.timesBrava = (state.stats.timesBrava || 0) + 1;
+        
         logger.info('MOOD', `${getMoodEmoji(keywordMood)} Humor mudou: ${previousMood} → ${keywordMood} (keyword)`);
+        
+        // Save to DB
+        await saveChannelState(channelId, state);
+        channelMoodsCache.set(channelId, state);
         
         return {
             mood: keywordMood,
@@ -406,11 +513,21 @@ export async function analyzeMood(channelId, message, options = {}) {
         const aiMood = await analyzeWithAI(message, previousMood);
         if (aiMood && aiMood !== previousMood) {
             state.currentMood = aiMood;
-            state.lastChange = Date.now();
+            state.lastChange = new Date();
             state.messagesSinceMoodChange = 0;
             state.transitionMessage = getTransitionMessage(previousMood, aiMood, 'ai');
             
+            // Update stats
+            if (!state.stats) state.stats = {};
+            state.stats.totalMoodChanges = (state.stats.totalMoodChanges || 0) + 1;
+            if (aiMood === 'chorona') state.stats.timesChorona = (state.stats.timesChorona || 0) + 1;
+            if (aiMood === 'brava') state.stats.timesBrava = (state.stats.timesBrava || 0) + 1;
+            
             logger.info('MOOD', `${getMoodEmoji(aiMood)} Humor mudou: ${previousMood} → ${aiMood} (AI)`);
+            
+            // Save to DB
+            await saveChannelState(channelId, state);
+            channelMoodsCache.set(channelId, state);
             
             return {
                 mood: aiMood,
@@ -429,8 +546,13 @@ export async function analyzeMood(channelId, message, options = {}) {
     if (state.currentMood !== 'friendly' && state.messagesSinceMoodChange > 10) {
         state.currentMood = 'friendly';
         state.transitionMessage = getTransitionMessage(previousMood, 'friendly', 'decay');
+        state.messagesSinceMoodChange = 0;
         
-        logger.debug('MOOD', `Humor decaiu para friendly após ${state.messagesSinceMoodChange} msgs`);
+        logger.debug('MOOD', `Humor decaiu para friendly após 10+ msgs`);
+        
+        // Save to DB
+        await saveChannelState(channelId, state);
+        channelMoodsCache.set(channelId, state);
         
         return {
             mood: 'friendly',
@@ -440,6 +562,12 @@ export async function analyzeMood(channelId, message, options = {}) {
             velhaCount: currentVelhaCount
         };
     }
+    
+    // Update message count periodically
+    if (state.messagesSinceMoodChange % 5 === 0) {
+        await saveChannelState(channelId, state);
+    }
+    channelMoodsCache.set(channelId, state);
     
     return {
         mood: state.currentMood,
@@ -451,20 +579,26 @@ export async function analyzeMood(channelId, message, options = {}) {
 /**
  * Get current mood for a channel
  */
-export function getCurrentMood(channelId) {
-    return getChannelState(channelId).currentMood;
+export async function getCurrentMood(channelId) {
+    const state = await getChannelState(channelId);
+    return state.currentMood;
 }
 
 /**
  * Force set mood for a channel (for commands)
  */
-export function setMood(channelId, mood) {
-    const state = getChannelState(channelId);
+export async function setMood(channelId, mood, guildId = null) {
+    const state = await getChannelState(channelId);
     const previousMood = state.currentMood;
     
     state.currentMood = mood;
     state.lastChange = Date.now();
     state.messagesSinceMoodChange = 0;
+    state.velhaCounter = 0; // Reset counter on forced mood change
+    
+    // Persist to database
+    await saveChannelState(channelId, state, guildId);
+    channelMoodsCache.set(channelId, state);
     
     logger.info('MOOD', `${getMoodEmoji(mood)} Humor forçado: ${previousMood} → ${mood}`);
     
@@ -474,8 +608,14 @@ export function setMood(channelId, mood) {
 /**
  * Reset velha counter for a channel
  */
-export function resetVelhaCounter(channelId) {
-    velhaCounters.set(channelId, 0);
+export async function resetVelhaCounter(channelId, guildId = null) {
+    const state = await getChannelState(channelId);
+    state.velhaCounter = 0;
+    
+    await saveChannelState(channelId, state, guildId);
+    channelMoodsCache.set(channelId, state);
+    
+    logger.info('MOOD', '🔄 Contador de "velha" resetado');
 }
 
 /**
