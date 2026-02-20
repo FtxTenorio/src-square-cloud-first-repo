@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
-import logger from '../discord/services/loggerService.js';
+import logger from '../nexus/utils/logger.js';
 
 // Connection state
 let isConnected = false;

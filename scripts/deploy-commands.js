@@ -15,17 +15,17 @@ dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Import all command services
-import { utilityCommands } from '../src/app/modules/discord/services/utilityService.js';
-import { moderationCommands } from '../src/app/modules/discord/services/moderationService.js';
-import { funCommands } from '../src/app/modules/discord/services/funService.js';
-import { customCommands } from '../src/app/modules/discord/commands/utility/customCommands.js';
+// Import all command services from Nexus module
+import { utilityCommands } from '../src/app/modules/nexus/services/utilityService.js';
+import { moderationCommands } from '../src/app/modules/nexus/services/moderationService.js';
+import { funCommands } from '../src/app/modules/nexus/services/funService.js';
+import { customCommands } from '../src/app/modules/nexus/commands/customCommands.js';
 
 async function deployCommands() {
     const commands = [];
     
-    // Load file-based commands (ping, server, user)
-    const commandsPath = path.join(__dirname, '../src/app/modules/discord/commands/utility');
+    // Load file-based commands from Nexus module
+    const commandsPath = path.join(__dirname, '../src/app/modules/nexus/commands');
     const commandFiles = fs.readdirSync(commandsPath).filter(file => 
         file.endsWith('.js') && !file.includes('customCommands')
     );
