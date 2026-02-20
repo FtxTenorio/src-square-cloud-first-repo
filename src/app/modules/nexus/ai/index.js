@@ -7,31 +7,10 @@ import logger from '../utils/logger.js';
 import { getPersonality, getAllPersonalities, PERSONALITIES } from './personalities.js';
 import { matchPattern } from './patterns.js';
 import * as openai from './providers/openai.js';
-
-// User preferences storage (in-memory, will be moved to DB)
-const userPreferences = new Map();
+import moodEngine from './moodEngine.js';
 
 // Conversation context storage
 const conversationContext = new Map();
-
-/**
- * Get user's personality preference
- */
-export function getUserPersonality(userId) {
-    return userPreferences.get(userId) || 'friendly';
-}
-
-/**
- * Set user's personality preference
- */
-export function setUserPersonality(userId, personalityId) {
-    if (PERSONALITIES[personalityId]) {
-        userPreferences.set(userId, personalityId);
-        logger.debug('AI', `Personalidade de ${userId} alterada para ${personalityId}`);
-        return true;
-    }
-    return false;
-}
 
 /**
  * Get available personalities for commands
@@ -62,14 +41,6 @@ function updateContext(userId, channelId, message) {
     
     conversationContext.set(key, context);
     
-    // Add contextual note every 5 messages
-    if (context.messageCount > 5 && context.messageCount % 5 === 0) {
-        return {
-            addNote: true,
-            note: `Já trocamos ${context.messageCount} mensagens! Tô gostando dessa conversa 😄`
-        };
-    }
-    
     return { addNote: false };
 }
 
@@ -83,52 +54,83 @@ export function clearContext(userId, channelId) {
 
 /**
  * Main response generator
- * Orchestrates pattern matching, sentiment analysis, and AI providers
+ * Orchestrates mood analysis, pattern matching, and AI providers
+ * Returns { content, moodResult } for status tracking
+ * 
+ * IMPORTANT: If mood changed, content will be null - only send transitionMessage
+ * This saves AI tokens and feels more natural
  */
 export async function generateResponse(message, history = [], options = {}) {
     const userId = message.author?.id || message.userId || 'unknown';
     const channelId = message.channel?.id || message.channelId || 'unknown';
     const content = (message.content || '').trim();
     
-    const personalityId = getUserPersonality(userId);
-    const personality = getPersonality(personalityId);
+    // 1. Analyze mood based on message (per channel)
+    const moodResult = await moodEngine.analyzeMood(channelId, content);
     
-    // 1. Try pattern matching first (fastest)
-    const patternMatch = matchPattern(content, personalityId);
+    // If mood changed, don't generate AI response - just return the transition
+    // Next message will use the new mood naturally
+    if (moodResult.changed && moodResult.transitionMessage) {
+        logger.debug('AI', `Humor mudou para ${moodResult.mood} - pulando resposta IA`);
+        return {
+            content: null, // No AI response needed
+            moodResult
+        };
+    }
+    
+    const personality = getPersonality(moodResult.mood);
+    
+    // Update context
+    updateContext(userId, channelId, content);
+    
+    // 2. Try pattern matching first (fastest)
+    const patternMatch = matchPattern(content, moodResult.mood);
     if (patternMatch.matched) {
         logger.debug('AI', `Pattern match: ${patternMatch.patternId}`);
         
-        const contextual = updateContext(userId, channelId, content);
-        let response = patternMatch.response;
-        
-        if (contextual.addNote) {
-            response += `\n\n_${contextual.note}_`;
-        }
-        
-        return response;
+        return {
+            content: patternMatch.response,
+            moodResult
+        };
     }
     
-    // 2. Try OpenAI if configured
+    // 3. Try OpenAI if configured
     if (openai.isConfigured()) {
         try {
             const result = await openai.generateResponse(content, personality, history);
             
-            const contextual = updateContext(userId, channelId, content);
-            let response = result.content;
-            
-            if (contextual.addNote) {
-                response += `\n\n_${contextual.note}_`;
-            }
-            
-            return response;
+            return {
+                content: result.content,
+                moodResult
+            };
         } catch (error) {
             logger.ai.error(error);
-            return getSleepingMessage();
+            return {
+                content: getSleepingMessage(),
+                moodResult
+            };
         }
     }
     
-    // 3. Fallback - Frieren está dormindo
-    return getSleepingMessage();
+    // 4. Fallback - Frieren está dormindo
+    return {
+        content: getSleepingMessage(),
+        moodResult
+    };
+}
+
+/**
+ * Get current mood for a channel
+ */
+export function getChannelMood(channelId) {
+    return moodEngine.getCurrentMood(channelId);
+}
+
+/**
+ * Force set mood for a channel
+ */
+export function setChannelMood(channelId, mood) {
+    return moodEngine.setMood(channelId, mood);
 }
 
 /**
@@ -152,9 +154,10 @@ function getSleepingMessage() {
 // Export everything
 export default {
     generateResponse,
-    getUserPersonality,
-    setUserPersonality,
     getAvailablePersonalities,
+    getChannelMood,
+    setChannelMood,
     clearContext,
-    PERSONALITIES
+    PERSONALITIES,
+    moodEngine
 };
