@@ -3,6 +3,7 @@
  * Supports: OpenAI, local pattern matching, and contextual responses
  */
 import logger from './loggerService.js';
+import axios from 'axios';
 
 // Personality modes the bot can adopt
 const PERSONALITIES = {
@@ -262,8 +263,6 @@ async function generateCreativeResponse(content, sentiment, personality, history
  * Call OpenAI API for advanced responses
  */
 async function callOpenAI(content, personality, history) {
-    const { default: fetch } = await import('node-fetch');
-    
     const messages = [
         { role: 'system', content: personality.systemPrompt + ' Responda em português brasileiro.' },
         ...history.slice(-10).map(h => ({
@@ -273,21 +272,17 @@ async function callOpenAI(content, personality, history) {
         { role: 'user', content }
     ];
     
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
+    const { data } = await axios.post('https://api.openai.com/v1/chat/completions', {
+        model: 'gpt-3.5-turbo',
+        messages,
+        max_tokens: 500,
+        temperature: 0.8
+    }, {
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
-        },
-        body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
-            messages,
-            max_tokens: 500,
-            temperature: 0.8
-        })
+        }
     });
-    
-    const data = await response.json();
     
     if (data.error) {
         throw new Error(data.error.message);
