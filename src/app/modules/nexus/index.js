@@ -106,6 +106,9 @@ function setupCoreEvents(client, options) {
     
     // Message handler
     client.on(Events.MessageCreate, async (message) => {
+        // Debug log
+        logger.debug('MSG', `Mensagem de ${message.author.tag}: ${message.content.substring(0, 50)}`);
+        
         if (message.author.bot) return;
         
         try {
@@ -172,12 +175,13 @@ function setupCoreEvents(client, options) {
                 };
                 
                 const response = await ai.generateResponse(messageData, history);
-                await message.reply(response);
+                const sentMessage = await message.reply(response);
                 
                 if (options.chatHistoryService) {
                     await options.chatHistoryService.saveBotResponse({
                         guildId: message.guild?.id,
                         channelId: message.channel.id,
+                        messageId: sentMessage.id,
                         content: response,
                         replyToMessageId: message.id
                     });
