@@ -14,6 +14,7 @@ import { utilityCommands } from './services/utilityService.js';
 import { moderationCommands } from './services/moderationService.js';
 import { funCommands } from './services/funService.js';
 import { customCommands } from './commands/utility/customCommands.js';
+import logger from './services/loggerService.js';
 
 // Initialize Discord client with all necessary intents
 const client = new Client({
@@ -48,7 +49,7 @@ async function registerCommands() {
                 client.commands.set(command.data.name, command);
             }
         } catch (error) {
-            console.error(`Error loading command ${file}:`, error);
+            logger.error('DISCORD', `Erro ao carregar comando ${file}`, error.message);
         }
     }
     
@@ -66,15 +67,14 @@ async function registerCommands() {
         }
     }
     
-    console.log(`Registered ${client.commands.size} commands`);
+    logger.success('DISCORD', `${client.commands.size} comandos registrados`);
 }
 
 /**
  * Bot ready event
  */
 client.on('ready', async () => {
-    console.log(`🤖 Logged in as ${client.user.tag}`);
-    console.log(`📊 Serving ${client.guilds.cache.size} servers`);
+    logger.discord.ready(client.user.tag, client.guilds.cache.size);
     
     // Set bot activity
     const activities = [
@@ -106,6 +106,8 @@ client.on('messageCreate', async (msg) => {
         
         // Check for level up
         if (xpResult?.leveledUp) {
+            logger.level.levelUp(msg.author.username, xpResult.level);
+            
             const levelUpEmbed = new EmbedBuilder()
                 .setTitle('🎉 Level Up!')
                 .setColor(0xffd700)
@@ -119,6 +121,8 @@ client.on('messageCreate', async (msg) => {
         // Check for new badges
         if (xpResult?.newBadges?.length > 0) {
             for (const badge of xpResult.newBadges) {
+                logger.level.badge(msg.author.username, `${badge.emoji} ${badge.name}`);
+                
                 const badgeEmbed = new EmbedBuilder()
                     .setTitle('🏅 Nova Badge Desbloqueada!')
                     .setColor(0xe91e63)
@@ -181,7 +185,7 @@ client.on('messageCreate', async (msg) => {
             });
         }
     } catch (error) {
-        console.error('Error processing message:', error);
+        logger.error('DISCORD', `Erro ao processar mensagem`, error.message);
     }
 });
 
@@ -205,14 +209,15 @@ client.on(Events.InteractionCreate, async (interaction) => {
     const command = interaction.client.commands.get(interaction.commandName);
     
     if (!command) {
-        console.error(`No command matching "${interaction.commandName}" was found.`);
+        logger.warn('DISCORD', `Comando não encontrado: "${interaction.commandName}"`);
         return;
     }
     
     try {
         await command.execute(interaction);
+        logger.discord.command(interaction.commandName, interaction.user.username, interaction.guild?.name || 'DM');
     } catch (error) {
-        console.error(`Error executing ${interaction.commandName}:`, error);
+        logger.error('DISCORD', `Erro ao executar /${interaction.commandName}`, error.message);
         
         const errorMessage = {
             content: '❌ Ocorreu um erro ao executar este comando!',
@@ -231,6 +236,8 @@ client.on(Events.InteractionCreate, async (interaction) => {
  * Guild member add event - Welcome message
  */
 client.on(Events.GuildMemberAdd, async (member) => {
+    logger.discord.join(member.user.username, member.guild.name);
+    
     // Find welcome channel
     const welcomeChannel = member.guild.channels.cache.find(
         ch => ch.name.includes('welcome') || ch.name.includes('bem-vindo') || ch.name === 'general'
@@ -258,11 +265,11 @@ client.on(Events.GuildMemberAdd, async (member) => {
  * Error handlers
  */
 client.on('error', (error) => {
-    console.error('Discord client error:', error);
+    logger.discord.error(error);
 });
 
 process.on('unhandledRejection', (error) => {
-    console.error('Unhandled promise rejection:', error);
+    logger.error('SYSTEM', 'Unhandled promise rejection', error.message || error);
 });
 
 // Register commands on startup

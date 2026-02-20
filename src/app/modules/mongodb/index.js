@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import logger from '../discord/services/loggerService.js';
 
 // Connection state
 let isConnected = false;
@@ -40,14 +41,14 @@ function getTlsOptions() {
             tempCertFile = path.join(os.tmpdir(), `mongo-client-${Date.now()}.pem`);
             fs.writeFileSync(tempCertFile, certBuffer);
             tlsOptions.tlsCertificateKeyFile = tempCertFile;
-            console.log('MongoDB CA + Client certificates loaded (mTLS)');
+            logger.debug('MONGO', 'Certificados CA + Cliente carregados (mTLS)');
         } else {
-            console.log('MongoDB CA certificate loaded');
+            logger.debug('MONGO', 'Certificado CA carregado');
         }
         
         return tlsOptions;
     } catch (error) {
-        console.error('Error setting up TLS:', error.message);
+        logger.error('MONGO', 'Erro ao configurar TLS', error.message);
         return {};
     }
 }
@@ -91,7 +92,7 @@ const defaultOptions = {
  */
 export async function connect(uri = process.env.MONGO_URI, options = {}) {
     if (isConnected) {
-        console.log('MongoDB already connected');
+        logger.debug('MONGO', 'Já conectado ao MongoDB');
         return mongoose;
     }
 
@@ -106,22 +107,22 @@ export async function connect(uri = process.env.MONGO_URI, options = {}) {
         await mongoose.connect(uri, opts);
         
         isConnected = true;
-        console.log('MongoDB connected successfully' + (tlsOptions.tls ? ' (TLS enabled)' : ''));
+        logger.success('MONGO', `Conectado com sucesso${tlsOptions.tls ? ' (TLS habilitado)' : ''}`);
         
         // Connection events
         mongoose.connection.on('error', (err) => {
-            console.error('MongoDB connection error:', err.message);
+            logger.error('MONGO', 'Erro na conexão', err.message);
             isConnected = false;
         });
 
         mongoose.connection.on('disconnected', () => {
-            console.log('MongoDB disconnected');
+            logger.db.disconnected();
             isConnected = false;
         });
 
         return mongoose;
     } catch (error) {
-        console.error('MongoDB connection failed:', error.message);
+        logger.error('MONGO', 'Falha na conexão', error.message);
         throw error;
     }
 }
@@ -138,7 +139,7 @@ export async function disconnect() {
     await mongoose.disconnect();
     isConnected = false;
     cleanupTempFiles();
-    console.log('MongoDB disconnected');
+    logger.info('MONGO', 'Desconectado do MongoDB');
 }
 
 /**

@@ -2,6 +2,7 @@
  * AI Service - Handles intelligent responses using various AI approaches
  * Supports: OpenAI, local pattern matching, and contextual responses
  */
+import logger from './loggerService.js';
 
 // Personality modes the bot can adopt
 const PERSONALITIES = {
@@ -216,9 +217,12 @@ async function generateCreativeResponse(content, sentiment, personality, history
     // Try OpenAI if available
     if (process.env.OPENAI_API_KEY) {
         try {
-            return await callOpenAI(content, personality, history);
+            const startTime = Date.now();
+            const response = await callOpenAI(content, personality, history);
+            logger.ai.response(response.length, Date.now() - startTime);
+            return response;
         } catch (error) {
-            console.error('OpenAI error:', error.message);
+            logger.ai.error(error);
             // Fallback to local generation
         }
     }
