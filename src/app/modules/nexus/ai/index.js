@@ -6,7 +6,6 @@
 import logger from '../utils/logger.js';
 import { getPersonality, getAllPersonalities, PERSONALITIES } from './personalities.js';
 import { matchPattern } from './patterns.js';
-import { analyzeSentiment, getSentimentResponses } from './sentiment.js';
 import * as openai from './providers/openai.js';
 
 // User preferences storage (in-memory, will be moved to DB)
@@ -124,38 +123,30 @@ export async function generateResponse(message, history = [], options = {}) {
             return response;
         } catch (error) {
             logger.ai.error(error);
-            logger.ai.fallback();
-            // Fall through to local response
+            return getSleepingMessage();
         }
     }
     
-    // 3. Fallback to sentiment-based local response
-    const sentiment = analyzeSentiment(content);
-    const response = getSentimentResponses(sentiment, personality.emoji);
-    
-    const contextual = updateContext(userId, channelId, content);
-    
-    if (contextual.addNote) {
-        return `${response}\n\n_${contextual.note}_`;
-    }
-    
-    return response;
+    // 3. Fallback - Frieren está dormindo
+    return getSleepingMessage();
 }
 
 /**
- * Extract topics from message (for context tracking)
+ * Get sleeping Frieren message
  */
-export function extractTopics(text) {
-    const words = text.toLowerCase().split(/\s+/);
-    const stopWords = new Set([
-        'o', 'a', 'os', 'as', 'um', 'uma', 'de', 'da', 'do', 'em', 
-        'para', 'com', 'que', 'e', 'é', 'não', 'sim', 'mas', 'ou',
-        'se', 'por', 'como', 'mais', 'ao', 'já', 'muito', 'pode'
-    ]);
+function getSleepingMessage() {
+    const sleepingMessages = [
+        '💤 *Frieren está dormindo... Afinal, elfos precisam de descanso também (mesmo que seja por alguns séculos).*',
+        '😴 *Frieren adormeceu enquanto meditava. Volte daqui a uns 10 anos, talvez ela acorde.*',
+        '🌙 *A maga está em um sono profundo. Himmel diria para ter paciência...*',
+        '💤 *Zzz... Frieren está tirando uma soneca. Para ela, "uma soneca" pode significar algumas décadas.*',
+        '😪 *Frieren não está disponível no momento. Ela encontrou um lugar confortável para dormir.*',
+        '🧝‍♀️💤 *"Só vou descansar os olhos por um momento..." - Frieren, há 3 dias atrás.*',
+        '🌸 *Frieren está dormindo sob uma árvore de cerejeira. Ela prometeu acordar na próxima primavera... de qual século, ela não especificou.*',
+        '📚💤 *Frieren adormeceu lendo um grimório. A magia de IA está temporariamente indisponível.*'
+    ];
     
-    return words
-        .filter(w => w.length > 3 && !stopWords.has(w))
-        .slice(0, 5);
+    return sleepingMessages[Math.floor(Math.random() * sleepingMessages.length)];
 }
 
 // Export everything
@@ -165,6 +156,5 @@ export default {
     setUserPersonality,
     getAvailablePersonalities,
     clearContext,
-    extractTopics,
     PERSONALITIES
 };
