@@ -2,15 +2,7 @@ import { Client, Collection, Events, GatewayIntentBits } from 'discord.js';
 import * as fs from 'fs'
 import https from 'node:https';
 import path from 'node:path';
-
-const messages = [
-    {
-        author: 'Tag of Author, avoid store the bot messages',
-        history: [
-            { msg: 'The entire message object', content: 'The message content from this user!' }
-        ]
-    }
-]
+import chatHistoryService from './chatHistoryService.js';
 
 const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
@@ -20,49 +12,70 @@ client.on('ready', () => {
     console.log(`Logged in as ${client.user.tag}`)
 })
 
-client.on('messageCreate', (msg) => {
-    if (msg.author.tag != client.user.tag) {
-        let historyMessages = messages.find(message => message.author === msg.author.tag);
-
-        if (!historyMessages) {
-            const initialMessages = {
-                author: msg.author.tag,
-                history: [
-                    { msg: msg, content: msg.content }
-                ]
-            }
-            messages.push(initialMessages);
+client.on('messageCreate', async (msg) => {
+    if (msg.author.bot) return; // Ignore bot messages
+    
+    try {
+        // Save user message to MongoDB
+        await chatHistoryService.saveMessage(msg, 'user');
+        
+        // Get conversation context (last 10 messages)
+        const context = await chatHistoryService.getContextMessages(
+            msg.author.id,
+            msg.channel.id,
+            10
+        );
+        
+        const isFirstMessage = context.length <= 1;
+        
+        if (isFirstMessage) {
+            const reply = await msg.reply(`Hello ${msg.author.username}, ready to receive beauty message to warm your day?`);
+            
+            // Save bot response
+            await chatHistoryService.saveBotResponse({
+                guildId: msg.guild?.id,
+                channelId: msg.channel.id,
+                messageId: reply.id,
+                content: reply.content,
+                replyToMessageId: msg.id,
+                conversationId: msg.channel.id
+            });
         } else {
-            historyMessages.history.push({ msg: msg, content: msg.content })
+            const startTime = Date.now();
+            
+            https.get('https://www.positive-api.online/phrase', (res) => {
+                let data = '';
+
+                res.on('data', (chunk) => {
+                    data += chunk;
+                });
+
+                res.on('end', async () => {
+                    try {
+                        const responseText = JSON.parse(data).text;
+                        const sentMsg = await msg.channel.send(responseText);
+                        
+                        // Save bot response with response time
+                        await chatHistoryService.saveBotResponse({
+                            guildId: msg.guild?.id,
+                            channelId: msg.channel.id,
+                            messageId: sentMsg.id,
+                            content: responseText,
+                            replyToMessageId: msg.id,
+                            botResponseTime: Date.now() - startTime,
+                            conversationId: msg.channel.id
+                        });
+                    } catch (parseError) {
+                        console.error('Error parsing response:', parseError);
+                    }
+                });
+            }).on('error', (error) => {
+                console.error('HTTP error:', error);
+                msg.channel.send('Sorry, I had trouble getting a message for you.');
+            });
         }
-        console.log('Mensages desse Author', historyMessages)
-
-        historyMessages = messages.find(message => message.author === msg.author.tag);
-
-
-        if (historyMessages.history.length === 1) {
-            return msg.reply(`Hello ${msg.author.username}, ready to receive beauty message to warm your day?`);
-        } else {
-            try {
-                https.get('https://www.positive-api.online/phrase', (res) => {
-                    let data = '';
-
-                    res.on('data', (chunck) => {
-                        data += chunck;
-                    });
-
-                    res.on('end', (error) => {
-                        if (error) {
-                            msg.channel.send(error.message)
-                        }
-                        msg.channel.send(JSON.parse(data).text)
-                    });
-                })
-            } catch (error) {
-                console.log(error)
-            }
-        }
-
+    } catch (error) {
+        console.error('Error processing message:', error);
     }
 })
 
