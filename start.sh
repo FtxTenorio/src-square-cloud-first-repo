@@ -30,18 +30,20 @@ else
   echo "[nginx] Pulando (usuario nao e root). Em Square Cloud o proxy e gerenciado pela plataforma."
 fi
 
-# 2. Client: sempre npm install (garante tailwindcss etc.), build e start (porta 80).
-echo "[2/3] Client (install, build, start)..."
-(cd "$ROOT/src/client" && \
-  npm install && \
-  npm run build && \
-  npm run start) &
+# Fase 1: trabalho pesado em sequência (evita pico de memória de install + build em paralelo)
+echo "[1/3] Client: npm install..."
+(cd "$ROOT/src/client" && npm install --no-audit --no-fund)
 
-# 3. Server: instala só se precisar; depois sobe
-echo "[3/3] Server..."
-(cd "$ROOT/src/server" && \
-  ( [ ! -d node_modules ] && npm install || true ) && \
-  npm run start) &
+echo "[2/3] Server: npm install..."
+(cd "$ROOT/src/server" && npm install --no-audit --no-fund)
+
+echo "[3/3] Client: build (um processo por vez)..."
+(cd "$ROOT/src/client" && NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=1024" npm run build)
+
+# Fase 2: sobe os dois processos (consumo menor que build)
+echo "[start] Subindo server e client..."
+(cd "$ROOT/src/server" && npm run start) &
+(cd "$ROOT/src/client" && npm run start) &
 
 wait
 echo "[start.sh] Encerrado."
