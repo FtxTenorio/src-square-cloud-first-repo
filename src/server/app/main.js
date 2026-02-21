@@ -20,14 +20,21 @@ const allowedOrigins = [
 ];
 
 await fastify.register(cors, {
-    origin: (origin, cb) => {
-        if (!origin || allowedOrigins.includes(origin)) return cb(null, origin || true);
-        return cb(null, false);
-    },
+    origin: allowedOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allowedHeaders: ["Content-Type", "Authorization", "X-User-Id", "Accept", "Origin", "X-Requested-With"],
     credentials: true,
     preflightContinue: false,
+});
+
+// Garante CORS em todas as respostas (incluindo erros/timeouts do app)
+fastify.addHook("onSend", (request, reply, payload, done) => {
+    const origin = request.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+        reply.header("Access-Control-Allow-Origin", origin);
+        reply.header("Access-Control-Allow-Credentials", "true");
+    }
+    done(null, payload);
 });
 
 fastify.register(routes);
