@@ -3,7 +3,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import routes from "./routes/index.js";
 import nexus from './modules/nexus/index.js'
-import mongodb from './modules/mongodb/index.js';
+import mongodb from '../database/mongodb/index.js';
 import cmdhub from './modules/cmdhub/index.js';
 import * as levelService from './modules/nexus/services/levelService.js';
 import * as chatHistoryService from './modules/nexus/services/chatHistoryService.js';

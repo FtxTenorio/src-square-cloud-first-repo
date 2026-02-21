@@ -5,7 +5,7 @@
 
 import { REST, Routes } from 'discord.js';
 import Command from '../models/Command.js';
-import redis from '../../../database/redis/index.js';
+import redis from '../../../../database/redis/index.js';
 import logger from '../../nexus/utils/logger.js';
 import rateLimiter from './rateLimiter.js';
 
