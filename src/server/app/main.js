@@ -15,9 +15,11 @@ const fastify = Fastify({
 });
 
 await fastify.register(cors, {
-    origin: true, // Allow the request Origin (frontend on port 80)
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-User-Id"],
+    origin: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-User-Id", "Accept", "Origin", "X-Requested-With"],
+    credentials: true,
+    preflightContinue: false,
 });
 
 fastify.register(routes);
