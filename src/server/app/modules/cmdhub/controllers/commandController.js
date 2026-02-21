@@ -29,11 +29,10 @@ export async function listCommands(request, reply) {
             };
         }
         
-        // Otherwise, fetch from MongoDB
         const filters = {};
         if (category) filters.category = category;
         if (enabled !== undefined) filters.enabled = enabled === 'true';
-        if (guildId) filters.guildId = guildId;
+        if (guildId !== undefined) filters.guildId = guildId;
         if (status) filters.status = status;
         
         const commands = await commandService.getAllCommands(filters);
@@ -60,7 +59,8 @@ export async function listCommands(request, reply) {
 export async function getCommand(request, reply) {
     try {
         const { name } = request.params;
-        const command = await commandService.getCommandByName(name);
+        const guildId = request.query.guildId;
+        const command = await commandService.getCommandByName(name, guildId);
         
         if (!command) {
             reply.status(404);
@@ -90,11 +90,10 @@ export async function createCommand(request, reply) {
             return { success: false, error: 'Nome e descrição são obrigatórios' };
         }
         
-        // Check if command already exists
-        const existing = await commandService.getCommandByName(name);
+        const existing = await commandService.getCommandByName(name, guildId);
         if (existing) {
             reply.status(409);
-            return { success: false, error: `Comando já existe: ${name}` };
+            return { success: false, error: `Comando já existe neste escopo: ${name}` };
         }
         
         const command = await commandService.createCommand({
@@ -126,9 +125,8 @@ export async function createCommand(request, reply) {
 export async function updateCommand(request, reply) {
     try {
         const { name } = request.params;
-        const updates = request.body;
+        const { guildId, ...updates } = request.body || {};
         
-        // Check rate limit
         const rateCheck = await rateLimiter.checkRateLimit('update', name);
         if (!rateCheck.allowed) {
             reply.status(429);
@@ -147,7 +145,8 @@ export async function updateCommand(request, reply) {
         const command = await commandService.updateCommand(
             name, 
             updates, 
-            request.headers['x-user-id'] || 'api'
+            request.headers['x-user-id'] || 'api',
+            guildId ?? request.query.guildId
         );
         
         reply.header('X-RateLimit-Remaining', rateCheck.remaining - 1);
@@ -173,8 +172,9 @@ export async function updateCommand(request, reply) {
 export async function deleteCommand(request, reply) {
     try {
         const { name } = request.params;
+        const guildId = request.body?.guildId ?? request.query.guildId;
         
-        await commandService.deleteCommand(name);
+        await commandService.deleteCommand(name, guildId);
         
         logger.http.request('DELETE', `/commands/${name}`, 200, 0);
         
@@ -196,14 +196,14 @@ export async function deleteCommand(request, reply) {
 export async function toggleCommand(request, reply) {
     try {
         const { name } = request.params;
-        const { enabled } = request.body;
+        const { enabled, guildId } = request.body || {};
         
         if (enabled === undefined) {
             reply.status(400);
             return { success: false, error: 'Campo "enabled" é obrigatório' };
         }
         
-        const command = await commandService.toggleCommand(name, enabled);
+        const command = await commandService.toggleCommand(name, enabled, guildId ?? request.query.guildId);
         
         logger.http.request('PATCH', `/commands/${name}/toggle`, 200, 0);
         

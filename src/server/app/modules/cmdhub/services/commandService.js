@@ -63,7 +63,7 @@ export async function getAllCommands(filters = {}) {
         const query = {};
         if (filters.category) query.category = filters.category;
         if (filters.enabled !== undefined) query.enabled = filters.enabled;
-        if (filters.guildId) query.guildId = filters.guildId;
+        if (filters.guildId !== undefined) query.guildId = filters.guildId === 'global' || filters.guildId === '' ? null : filters.guildId;
         if (filters.status) query['deployment.status'] = filters.status;
         
         const commands = await Command.find(query).lean();
@@ -79,10 +79,11 @@ export async function getAllCommands(filters = {}) {
 }
 
 /**
- * Get command by name
+ * Get command by name and scope (guildId = null para global)
  */
-export async function getCommandByName(name) {
-    const cacheKey = `${CACHE_PREFIX}name:${name}`;
+export async function getCommandByName(name, guildId = null) {
+    const normalizedGuild = guildId === undefined || guildId === '' || guildId === 'global' ? null : guildId;
+    const cacheKey = `${CACHE_PREFIX}name:${name}:guild:${normalizedGuild ?? 'global'}`;
     
     try {
         const cached = await redis.get(cacheKey);
@@ -90,7 +91,7 @@ export async function getCommandByName(name) {
             return JSON.parse(cached);
         }
         
-        const command = await Command.findOne({ name: name.toLowerCase() }).lean();
+        const command = await Command.findOne({ name: name.toLowerCase(), guildId: normalizedGuild }).lean();
         
         if (command) {
             await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(command));
@@ -120,9 +121,15 @@ export async function getCommandById(id) {
  */
 export async function createCommand(data, createdBy = 'system') {
     try {
+        const guildId = data.guildId === '' || data.guildId === 'global' ? null : data.guildId || null;
+        const existing = await Command.findOne({ name: data.name.toLowerCase(), guildId });
+        if (existing) {
+            throw new Error(`Comando já existe neste escopo: ${data.name}`);
+        }
         const command = new Command({
             ...data,
             name: data.name.toLowerCase(),
+            guildId,
             createdBy,
             updatedBy: createdBy
         });
@@ -141,21 +148,21 @@ export async function createCommand(data, createdBy = 'system') {
 /**
  * Update command
  */
-export async function updateCommand(name, data, updatedBy = 'system') {
-    // Check rate limit
+export async function updateCommand(name, data, updatedBy = 'system', guildId = null) {
+    const normalizedGuild = guildId === undefined || guildId === '' || guildId === 'global' ? null : guildId;
     const rateCheck = await rateLimiter.checkRateLimit('update', name);
     if (!rateCheck.allowed) {
         throw new Error(rateCheck.message);
     }
     
     try {
-        const command = await Command.findOne({ name: name.toLowerCase() });
+        const command = await Command.findOne({ name: name.toLowerCase(), guildId: normalizedGuild });
         
         if (!command) {
             throw new Error(`Comando não encontrado: ${name}`);
         }
         
-        // Update fields
+        if (data.guildId !== undefined) data.guildId = data.guildId === '' || data.guildId === 'global' ? null : data.guildId;
         Object.assign(command, data);
         command.updatedBy = updatedBy;
         command.version += 1;
@@ -176,9 +183,10 @@ export async function updateCommand(name, data, updatedBy = 'system') {
 /**
  * Delete command
  */
-export async function deleteCommand(name) {
+export async function deleteCommand(name, guildId = null) {
     try {
-        const command = await Command.findOneAndDelete({ name: name.toLowerCase() });
+        const normalizedGuild = guildId === undefined || guildId === '' || guildId === 'global' ? null : guildId;
+        const command = await Command.findOneAndDelete({ name: name.toLowerCase(), guildId: normalizedGuild });
         
         if (!command) {
             throw new Error(`Comando não encontrado: ${name}`);
@@ -197,10 +205,11 @@ export async function deleteCommand(name) {
 /**
  * Toggle command enabled/disabled
  */
-export async function toggleCommand(name, enabled) {
+export async function toggleCommand(name, enabled, guildId = null) {
     try {
+        const normalizedGuild = guildId === undefined || guildId === '' || guildId === 'global' ? null : guildId;
         const command = await Command.findOneAndUpdate(
-            { name: name.toLowerCase() },
+            { name: name.toLowerCase(), guildId: normalizedGuild },
             { enabled, 'deployment.status': 'outdated' },
             { new: true }
         );
@@ -299,21 +308,19 @@ export async function syncFromDiscord(appId = null, guildId = null) {
             
         const discordCommands = await rest.get(route);
         
-        // Sync each command
+        const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
         const synced = [];
         for (const dc of discordCommands) {
-            let command = await Command.findOne({ name: dc.name });
+            let command = await Command.findOne({ name: dc.name, guildId: normalizedGuild });
             
             if (command) {
-                // Update existing
                 command.syncFromDiscord(dc);
             } else {
-                // Create new from Discord
                 command = new Command({
                     name: dc.name,
                     description: dc.description,
                     options: dc.options || [],
-                    guildId: guildId,
+                    guildId: normalizedGuild,
                     category: 'custom'
                 });
                 command.syncFromDiscord(dc);
@@ -356,21 +363,44 @@ export async function deployToDiscord(appId = null, guildId = null) {
     try {
         logger.info('CMDHUB', '🚀 Deployando comandos para o Discord...');
         
-        // Get enabled commands
-        const commands = await Command.find({ enabled: true });
+        const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
+        const scopeLabel = normalizedGuild ? `guild ${normalizedGuild}` : 'global';
+        
+        // Remover do Discord os desabilitados deste escopo
+        const disabled = await Command.find({
+            enabled: false,
+            guildId: normalizedGuild,
+            'discord.id': { $exists: true, $ne: null }
+        });
+        for (const cmd of disabled) {
+            try {
+                const deleteRoute = normalizedGuild
+                    ? Routes.applicationGuildCommand(targetAppId, normalizedGuild, cmd.discord.id)
+                    : Routes.applicationCommand(targetAppId, cmd.discord.id);
+                await rest.delete(deleteRoute);
+                await Command.findOneAndUpdate(
+                    { name: cmd.name, guildId: normalizedGuild },
+                    { 'discord.id': null, 'deployment.status': 'pending' }
+                );
+                logger.info('CMDHUB', `🗑️ Comando desabilitado removido do Discord (${scopeLabel}): ${cmd.name}`);
+            } catch (err) {
+                logger.warn('CMDHUB', `Ignorando remoção de ${cmd.name} no Discord: ${err.message}`);
+            }
+        }
+        
+        // Só comandos habilitados deste escopo (global = guildId null, guild = guildId igual)
+        const commands = await Command.find({ enabled: true, guildId: normalizedGuild });
         const commandData = commands.map(cmd => cmd.toDiscordAPI());
         
-        // Deploy to Discord
-        const route = guildId 
-            ? Routes.applicationGuildCommands(targetAppId, guildId)
+        const route = normalizedGuild
+            ? Routes.applicationGuildCommands(targetAppId, normalizedGuild)
             : Routes.applicationCommands(targetAppId);
             
         const result = await rest.put(route, { body: commandData });
         
-        // Update deployment status
         for (const deployed of result) {
             await Command.findOneAndUpdate(
-                { name: deployed.name },
+                { name: deployed.name, guildId: normalizedGuild },
                 {
                     'discord.id': deployed.id,
                     'discord.applicationId': deployed.application_id,
@@ -385,14 +415,13 @@ export async function deployToDiscord(appId = null, guildId = null) {
         await rateLimiter.incrementRateLimit('deploy', targetAppId);
         await invalidateCache();
         
-        logger.info('CMDHUB', `✅ ${result.length} comandos deployados`);
-        return { deployed: result.length, commands: result.map(c => c.name) };
+        logger.info('CMDHUB', `✅ ${result.length} comandos deployados (${scopeLabel})`);
+        return { deployed: result.length, commands: result.map(c => c.name), scope: normalizedGuild ? 'guild' : 'global', guildId: normalizedGuild };
     } catch (error) {
         logger.error('CMDHUB', 'Erro ao deployar para o Discord', error.message);
         
-        // Mark failed
         await Command.updateMany(
-            { enabled: true, 'deployment.status': { $ne: 'deployed' } },
+            { enabled: true, guildId: normalizedGuild, 'deployment.status': { $ne: 'deployed' } },
             { 
                 'deployment.status': 'failed',
                 'deployment.lastError': error.message
@@ -411,15 +440,16 @@ export async function deleteFromDiscord(applicationId, commandName, guildId = nu
         throw new Error('Discord REST client não inicializado');
     }
     
+    const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
     try {
-        const command = await Command.findOne({ name: commandName.toLowerCase() });
+        const command = await Command.findOne({ name: commandName.toLowerCase(), guildId: normalizedGuild });
         
         if (!command?.discord?.id) {
             throw new Error(`Comando não encontrado no Discord: ${commandName}`);
         }
         
-        const route = guildId
-            ? Routes.applicationGuildCommand(applicationId, guildId, command.discord.id)
+        const route = normalizedGuild
+            ? Routes.applicationGuildCommand(applicationId, normalizedGuild, command.discord.id)
             : Routes.applicationCommand(applicationId, command.discord.id);
             
         await rest.delete(route);

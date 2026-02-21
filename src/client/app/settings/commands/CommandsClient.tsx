@@ -9,6 +9,7 @@ type Command = {
   description: string;
   category: string;
   enabled: boolean;
+  guildId?: string | null;
   deployment?: { status: string; lastDeployed?: string };
   stats?: { totalUses?: number };
 };
@@ -27,9 +28,13 @@ export default function CommandsClient() {
   const [error, setError] = useState<string | null>(null);
   const [filterCategory, setFilterCategory] = useState<string>("");
   const [filterEnabled, setFilterEnabled] = useState<string>("");
+  const [scope, setScope] = useState<"global" | "guild">("global");
+  const [guildId, setGuildId] = useState<string>("");
   const [syncing, setSyncing] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const scopeGuildId = scope === "global" ? null : guildId || null;
 
   const fetchCommands = async () => {
     setLoading(true);
@@ -39,6 +44,8 @@ export default function CommandsClient() {
       if (filterCategory) params.set("category", filterCategory);
       if (filterEnabled === "true") params.set("enabled", "true");
       if (filterEnabled === "false") params.set("enabled", "false");
+      if (scope === "global") params.set("guildId", "global");
+      else if (guildId) params.set("guildId", guildId);
       const res = await fetch(`${base}/commands?${params}`);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to fetch");
@@ -63,7 +70,7 @@ export default function CommandsClient() {
 
   useEffect(() => {
     fetchCommands();
-  }, [filterCategory, filterEnabled]);
+  }, [filterCategory, filterEnabled, scope, guildId]);
 
   useEffect(() => {
     fetchStats();
@@ -72,7 +79,8 @@ export default function CommandsClient() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch(`${base}/commands/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const body = scope === "guild" && guildId ? JSON.stringify({ guildId }) : "{}";
+      const res = await fetch(`${base}/commands/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Sync failed");
       await fetchCommands();
@@ -85,9 +93,14 @@ export default function CommandsClient() {
   };
 
   const handleDeploy = async () => {
+    if (scope === "guild" && !guildId.trim()) {
+      setError("Informe o ID do servidor (guild) para deploy em guild.");
+      return;
+    }
     setDeploying(true);
     try {
-      const res = await fetch(`${base}/commands/deploy`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const body = scope === "guild" && guildId ? JSON.stringify({ guildId }) : "{}";
+      const res = await fetch(`${base}/commands/deploy`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Deploy failed");
       await fetchCommands();
@@ -102,10 +115,12 @@ export default function CommandsClient() {
   const toggleCommand = async (name: string, enabled: boolean) => {
     setActionLoading(name);
     try {
+      const body: { enabled: boolean; guildId?: string | null } = { enabled };
+      if (scopeGuildId !== undefined) body.guildId = scopeGuildId;
       const res = await fetch(`${base}/commands/${encodeURIComponent(name)}/toggle`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Toggle failed");
@@ -122,7 +137,9 @@ export default function CommandsClient() {
     if (!confirm(`Delete command "${name}" from database?`)) return;
     setActionLoading(name);
     try {
-      const res = await fetch(`${base}/commands/${encodeURIComponent(name)}`, { method: "DELETE" });
+      const opts: RequestInit = { method: "DELETE", headers: { "Content-Type": "application/json" } };
+      if (scopeGuildId !== undefined && scopeGuildId !== null) opts.body = JSON.stringify({ guildId: scopeGuildId });
+      const res = await fetch(`${base}/commands/${encodeURIComponent(name)}`, opts);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Delete failed");
       await fetchCommands();
@@ -173,7 +190,25 @@ export default function CommandsClient() {
         </div>
       </div>
 
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap gap-3 mb-4 items-center">
+        <span className="text-zinc-500 text-sm">Scope:</span>
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value as "global" | "guild")}
+          className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200"
+        >
+          <option value="global">Global</option>
+          <option value="guild">Guild (servidor)</option>
+        </select>
+        {scope === "guild" && (
+          <input
+            type="text"
+            placeholder="Guild ID"
+            value={guildId}
+            onChange={(e) => setGuildId(e.target.value)}
+            className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 w-56"
+          />
+        )}
         <select
           value={filterCategory}
           onChange={(e) => setFilterCategory(e.target.value)}
@@ -203,6 +238,7 @@ export default function CommandsClient() {
             <thead className="bg-zinc-800/80 text-zinc-400">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Scope</th>
                 <th className="px-4 py-3 font-medium">Description</th>
                 <th className="px-4 py-3 font-medium">Category</th>
                 <th className="px-4 py-3 font-medium">Status</th>
@@ -212,8 +248,9 @@ export default function CommandsClient() {
             </thead>
             <tbody className="divide-y divide-zinc-800">
               {commands.map((cmd) => (
-                <tr key={cmd.name} className="text-zinc-300">
+                <tr key={`${cmd.name}-${cmd.guildId ?? "global"}`} className="text-zinc-300">
                   <td className="px-4 py-3 font-mono text-white">{cmd.name}</td>
+                  <td className="px-4 py-3 text-zinc-400">{cmd.guildId ? `Guild ${cmd.guildId}` : "Global"}</td>
                   <td className="px-4 py-3 max-w-xs truncate">{cmd.description}</td>
                   <td className="px-4 py-3">{cmd.category}</td>
                   <td className="px-4 py-3">

@@ -13,7 +13,6 @@ const commandSchema = new mongoose.Schema({
     name: {
         type: String,
         required: true,
-        unique: true,
         lowercase: true,
         trim: true,
         maxlength: 32
@@ -196,6 +195,7 @@ const commandSchema = new mongoose.Schema({
 // ═══════════════════════════════════════════════════════════
 // INDEXES
 // ═══════════════════════════════════════════════════════════
+commandSchema.index({ name: 1, guildId: 1 }, { unique: true });
 commandSchema.index({ category: 1 });
 commandSchema.index({ enabled: 1 });
 commandSchema.index({ guildId: 1 });

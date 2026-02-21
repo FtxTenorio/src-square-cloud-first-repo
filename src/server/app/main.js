@@ -14,10 +14,21 @@ const fastify = Fastify({
     logger: false // Disable fastify default logger, using our custom one
 });
 
-const allowedOrigins = [
+const productionOrigins = [
     "https://itenorio.squareweb.app",
     "https://api-itenorio.squareweb.app",
 ];
+const devOrigins = [
+    "http://localhost:8081",
+    "http://127.0.0.1:8081",
+];
+const envOrigins = process.env.CORS_ORIGINS
+    ? process.env.CORS_ORIGINS.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+const allowedOrigins =
+    envOrigins.length > 0
+        ? envOrigins
+        : [...productionOrigins, ...(process.env.NODE_ENV !== "production" ? devOrigins : [])];
 
 await fastify.register(cors, {
     origin: allowedOrigins,
