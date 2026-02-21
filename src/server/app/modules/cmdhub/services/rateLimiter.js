@@ -3,7 +3,7 @@
  * Uses Redis to limit command updates to 3 per hour
  */
 
-import redis from '../../redis/index.js';
+import redis from '../../../database/redis/index.js';
 import logger from '../../nexus/utils/logger.js';
 
 const RATE_LIMIT_PREFIX = 'cmdhub:ratelimit:';
