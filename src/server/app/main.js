@@ -14,8 +14,16 @@ const fastify = Fastify({
     logger: false // Disable fastify default logger, using our custom one
 });
 
+const allowedOrigins = [
+    "https://itenorio.squareweb.app",
+    "https://api-itenorio.squareweb.app",
+];
+
 await fastify.register(cors, {
-    origin: true,
+    origin: (origin, cb) => {
+        if (!origin || allowedOrigins.includes(origin)) return cb(null, origin || true);
+        return cb(null, false);
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allowedHeaders: ["Content-Type", "Authorization", "X-User-Id", "Accept", "Origin", "X-Requested-With"],
     credentials: true,
