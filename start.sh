@@ -30,13 +30,13 @@ else
   echo "[nginx] Pulando (usuario nao e root). Em Square Cloud o proxy e gerenciado pela plataforma."
 fi
 
-# 2. Client (install, build, start in background)
-echo "[2/3] Iniciando client (background)..."
-(cd "$ROOT/src/client" && pnpm install && pnpm build && pnpm start) &
+# 2. Client (install, build, start in background) — porta 80
+echo "[2/3] Client: npm install, build, start (porta 80)..."
+(cd "$ROOT/src/client" && npm install && npm run build && npm run start) &
 
 # 3. Server (install, start in background)
-echo "[3/3] Iniciando server (background)..."
-(cd "$ROOT/src/server" && pnpm install && pnpm start) &
+echo "[3/3] Server: npm install, start..."
+(cd "$ROOT/src/server" && npm install && npm run start) &
 
 wait
 echo "[start.sh] Encerrado."
