@@ -1,11 +1,11 @@
 import 'dotenv/config';
 import Fastify from "fastify"
-import routes from "./app/routes/index.js";
-import nexus from './app/modules/nexus/index.js'
-import mongodb from './app/modules/mongodb/index.js';
-import cmdhub from './app/modules/cmdhub/index.js';
-import * as levelService from './app/modules/nexus/services/levelService.js';
-import * as chatHistoryService from './app/modules/nexus/services/chatHistoryService.js';
+import routes from "./routes/index.js";
+import nexus from './modules/nexus/index.js'
+import mongodb from './modules/mongodb/index.js';
+import cmdhub from './modules/cmdhub/index.js';
+import * as levelService from './modules/nexus/services/levelService.js';
+import * as chatHistoryService from './modules/nexus/services/chatHistoryService.js';
 
 const { logger } = nexus;
 
@@ -34,7 +34,7 @@ const start = async () => {
         await nexus.start(process.env.DISCORD_SECRET_KEY);
         
         // Start Fastify server
-        await fastify.listen({ port: process.env.PORT, host:'0.0.0.0'});
+        await fastify.listen({ port: process.env.SERVER_PORT, host:'0.0.0.0'});
         logger.http.request('LISTEN', `http://0.0.0.0:${process.env.PORT}`, 200, 0);
         
     } catch (error) {
