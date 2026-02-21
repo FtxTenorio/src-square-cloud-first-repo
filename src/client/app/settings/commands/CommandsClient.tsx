@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getApiUrl } from "../../../lib/api";
+import PencilEditInput from "./PencilEditInput";
 
 type Command = {
   _id?: string;
@@ -50,8 +51,19 @@ export default function CommandsClient() {
   const [rateLimit, setRateLimit] = useState<{ success: boolean; maxAttempts: number; windowSeconds: number; active: RateLimitEntry[] } | null>(null);
   const [detailCommand, setDetailCommand] = useState<Command | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ name: string } | null>(null);
+  const [deleteAlsoDiscord, setDeleteAlsoDiscord] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [originalName, setOriginalName] = useState("");
+  const [originalCategory, setOriginalCategory] = useState("");
+  const [originalDescription, setOriginalDescription] = useState("");
+  const [detailSaving, setDetailSaving] = useState(false);
 
   const scopeGuildId = scope === "global" ? null : guildId || null;
+
+  const ALLOWED_CATEGORIES = ["utility", "moderation", "fun", "ai", "custom", "system"] as const;
 
   const fetchCommands = async () => {
     setLoading(true);
@@ -125,6 +137,20 @@ export default function CommandsClient() {
     fetchRateLimit();
   }, []);
 
+  useEffect(() => {
+    if (detailCommand) {
+      const name = detailCommand.name;
+      const category = detailCommand.category || "custom";
+      const description = detailCommand.description ?? "";
+      setEditName(name);
+      setEditCategory(category);
+      setEditDescription(description);
+      setOriginalName(name);
+      setOriginalCategory(category);
+      setOriginalDescription(description);
+    }
+  }, [detailCommand]);
+
   const handleSync = async () => {
     setSyncing(true);
     try {
@@ -183,9 +209,14 @@ export default function CommandsClient() {
     }
   };
 
-  const deleteCommand = async (name: string) => {
-    if (!confirm(`Deletar o comando "${name}" do banco de dados?`)) return;
-    const alsoFromDiscord = confirm("Também remover o comando do Discord? (o slash command deixará de aparecer para os usuários)");
+  const confirmDelete = (name: string) => {
+    setDeleteAlsoDiscord(false);
+    setDeleteConfirm({ name });
+  };
+
+  const executeDelete = async (alsoFromDiscord: boolean) => {
+    const name = deleteConfirm?.name;
+    if (!name) return;
     setActionLoading(name);
     try {
       if (alsoFromDiscord) {
@@ -205,6 +236,7 @@ export default function CommandsClient() {
       const res = await fetch(`${base}/commands/${encodeURIComponent(name)}`, opts);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Delete failed");
+      setDeleteConfirm(null);
       await fetchCommands();
       await fetchStats();
       if (detailCommand?.name === name) setDetailCommand(null);
@@ -212,6 +244,100 @@ export default function CommandsClient() {
       setError(e instanceof Error ? e.message : "Delete failed");
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const closeDeleteModal = () => {
+    if (!actionLoading) setDeleteConfirm(null);
+  };
+
+  const hasDetailChange =
+    editName.trim().toLowerCase() !== originalName ||
+    editCategory !== originalCategory ||
+    editDescription !== originalDescription;
+
+  const confirmNameEdit = (newValue: string) => {
+    const name = newValue.trim().toLowerCase();
+    if (!name) {
+      setError("Nome não pode ser vazio");
+      throw new Error("Nome não pode ser vazio");
+    }
+    if (name.length > 32) {
+      setError("Nome deve ter no máximo 32 caracteres");
+      throw new Error("Nome deve ter no máximo 32 caracteres");
+    }
+    setError(null);
+    setEditName(name);
+    setOriginalName(name);
+    setDetailCommand((prev) => (prev ? { ...prev, name } : null));
+  };
+
+  const confirmDescriptionEdit = async (newValue: string) => {
+    if (!detailCommand) return;
+    if (newValue === originalDescription) return;
+    setError(null);
+    try {
+      const body: { description: string; guildId?: string | null } = { description: newValue };
+      if (scopeGuildId !== undefined && scopeGuildId !== null) body.guildId = scopeGuildId;
+      const res = await fetch(`${base}/commands/${encodeURIComponent(detailCommand.name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao salvar descrição");
+      setEditDescription(newValue);
+      setOriginalDescription(newValue);
+      setDetailCommand({ ...detailCommand, description: newValue });
+      await fetchCommands();
+      await fetchStats();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao salvar descrição");
+      throw e;
+    }
+  };
+
+  const saveDetailCommand = async () => {
+    if (!detailCommand || !hasDetailChange) return;
+    const name = editName.trim().toLowerCase();
+    if (!name) {
+      setError("Nome não pode ser vazio");
+      return;
+    }
+    if (name.length > 32) {
+      setError("Nome deve ter no máximo 32 caracteres");
+      return;
+    }
+    if (!ALLOWED_CATEGORIES.includes(editCategory as (typeof ALLOWED_CATEGORIES)[number])) {
+      setError("Categoria inválida");
+      return;
+    }
+    setDetailSaving(true);
+    setError(null);
+    try {
+      const body: { name: string; category: string; description: string; guildId?: string | null } = {
+        name,
+        category: editCategory,
+        description: editDescription,
+      };
+      if (scopeGuildId !== undefined && scopeGuildId !== null) body.guildId = scopeGuildId;
+      const res = await fetch(`${base}/commands/${encodeURIComponent(detailCommand.name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao salvar");
+      setDetailCommand({ ...detailCommand, ...json.data, name, category: editCategory, description: editDescription });
+      setOriginalName(name);
+      setOriginalCategory(editCategory);
+      setOriginalDescription(editDescription);
+      await fetchCommands();
+      await fetchStats();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao salvar");
+    } finally {
+      setDetailSaving(false);
     }
   };
 
@@ -354,7 +480,7 @@ export default function CommandsClient() {
                         {cmd.enabled ? "Disable" : "Enable"}
                       </button>
                       <button
-                        onClick={() => deleteCommand(cmd.name)}
+                        onClick={() => confirmDelete(cmd.name)}
                         disabled={actionLoading === cmd.name}
                         className="rounded bg-red-900/50 px-2 py-1 text-xs text-red-300 hover:bg-red-900 disabled:opacity-50"
                       >
@@ -388,7 +514,7 @@ export default function CommandsClient() {
             ) : detailCommand ? (
               <>
                 <div className="flex items-center justify-between border-b border-zinc-700 px-4 py-3">
-                  <h2 className="text-lg font-semibold text-white font-mono">{detailCommand.name}</h2>
+                  <h2 className="text-lg font-semibold text-white">Editar comando</h2>
                   <button
                     type="button"
                     onClick={() => setDetailCommand(null)}
@@ -399,15 +525,34 @@ export default function CommandsClient() {
                   </button>
                 </div>
                 <div className="p-4 space-y-3 text-sm">
+                  <PencilEditInput
+                    value={editName}
+                    onConfirm={confirmNameEdit}
+                    label="Nome"
+                    placeholder="nome-do-comando"
+                    maxLength={32}
+                    inputClassName="font-mono"
+                  />
                   <div>
-                    <span className="text-zinc-500 block text-xs uppercase tracking-wider">Descrição</span>
-                    <p className="text-zinc-200">{detailCommand.description}</p>
+                    <label className="text-zinc-500 block text-xs uppercase tracking-wider mb-1">Categoria</label>
+                    <select
+                      value={editCategory}
+                      onChange={(e) => setEditCategory(e.target.value)}
+                      className="w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {ALLOWED_CATEGORIES.map((c) => (
+                        <option key={c} value={c}>{c}</option>
+                      ))}
+                    </select>
                   </div>
+                  <PencilEditInput
+                    value={editDescription}
+                    onConfirm={confirmDescriptionEdit}
+                    label="Descrição"
+                    placeholder="Descrição do comando"
+                    maxLength={100}
+                  />
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <span className="text-zinc-500 block text-xs uppercase tracking-wider">Categoria</span>
-                      <p className="text-zinc-200">{detailCommand.category}</p>
-                    </div>
                     <div>
                       <span className="text-zinc-500 block text-xs uppercase tracking-wider">Status</span>
                       <p className={detailCommand.enabled ? "text-emerald-400" : "text-zinc-500"}>
@@ -440,9 +585,68 @@ export default function CommandsClient() {
                       </pre>
                     </div>
                   )}
+                  <div className="pt-3 border-t border-zinc-700 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={saveDetailCommand}
+                      disabled={detailSaving || !hasDetailChange}
+                      className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {detailSaving ? "Salvando…" : "Salvar"}
+                    </button>
+                  </div>
                 </div>
               </>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {deleteConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={closeDeleteModal}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-dialog-title"
+        >
+          <div
+            className="rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-w-md w-full p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="delete-dialog-title" className="text-lg font-semibold text-white mb-2">
+              Deletar comando
+            </h2>
+            <p className="text-zinc-400 text-sm mb-4">
+              O comando <span className="font-mono text-zinc-200">{deleteConfirm.name}</span> será removido do banco de dados (não aparece mais na lista). Você pode opcionalmente removê-lo também do Discord.
+            </p>
+            <label className="flex items-center gap-2 mb-5 cursor-pointer text-sm text-zinc-300">
+              <input
+                type="checkbox"
+                checked={deleteAlsoDiscord}
+                onChange={(e) => setDeleteAlsoDiscord(e.target.checked)}
+                className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+              />
+              Também remover do Discord (o slash command deixa de aparecer para os usuários)
+            </label>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={!!actionLoading}
+                className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDelete(deleteAlsoDiscord)}
+                disabled={!!actionLoading}
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
+              >
+                {actionLoading ? "Deletando…" : "Deletar"}
+              </button>
+            </div>
           </div>
         </div>
       )}

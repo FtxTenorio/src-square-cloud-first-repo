@@ -78,6 +78,12 @@ const commandSchema = new mongoose.Schema({
         default: 'system'
     },
     
+    // Soft delete: when set, command is hidden from lists and cannot be used
+    deletedAt: {
+        type: Date,
+        default: null
+    },
+    
     // ═══════════════════════════════════════════════════════════
     // DISCORD API DATA (Synced from Discord)
     // ═══════════════════════════════════════════════════════════
@@ -291,7 +297,8 @@ commandSchema.methods.needsRedeploy = function() {
  * Get all enabled commands for deployment
  */
 commandSchema.statics.getDeployableCommands = function() {
-    return this.find({ 
+    return this.find({
+        deletedAt: null,
         enabled: true,
         $or: [
             { 'deployment.status': 'pending' },
@@ -305,14 +312,14 @@ commandSchema.statics.getDeployableCommands = function() {
  * Get commands by category
  */
 commandSchema.statics.getByCategory = function(category) {
-    return this.find({ category, enabled: true });
+    return this.find({ deletedAt: null, category, enabled: true });
 };
 
 /**
  * Get top used commands
  */
 commandSchema.statics.getTopCommands = function(limit = 10) {
-    return this.find({ enabled: true })
+    return this.find({ deletedAt: null, enabled: true })
         .sort({ 'stats.totalUses': -1 })
         .limit(limit);
 };
