@@ -1,4 +1,4 @@
-import { createModel } from '../modules/mongodb/model-factory.js';
+import { createModel } from '../../database/mongodb/model-factory.js';
 
 /**
  * ChatHistory Model

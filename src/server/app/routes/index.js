@@ -1,4 +1,4 @@
-import redis from '../modules/redis/index.js';
+import redis from '../../database/redis/index.js';
 import cmdhub from '../modules/cmdhub/index.js';
 
 const CACHE_KEY = 'hello_world_cache';
