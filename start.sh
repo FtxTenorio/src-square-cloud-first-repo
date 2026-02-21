@@ -16,17 +16,19 @@ echo "[Diretorio] ROOT=$ROOT | PWD=$PWD"
 echo "[PATH] $PATH"
 echo "=============================================="
 
-# 0. Nginx: install (if not present) — run this script as root (e.g. su então ./start.sh)
-echo "[0/3] Instalando/atualizando nginx..."
-apt-get update && apt-get install -y nginx
-
-# 1. Nginx: config + reload
-echo "[1/3] Configurando nginx..."
-mkdir -p /etc/nginx/sites-enabled
-ln -sf "$ROOT/nginx/square-cloud.conf" /etc/nginx/sites-enabled/square-cloud.conf
-rm -f /etc/nginx/sites-enabled/default
-nginx -t
-systemctl reload nginx
+# Nginx só roda como root (uid 0). Em ambiente sem root (ex.: Square Cloud) pula nginx.
+if [ "$(id -u)" = "0" ]; then
+  echo "[0/3] Root detectado: instalando/atualizando nginx..."
+  apt-get update && apt-get install -y nginx
+  echo "[1/3] Configurando nginx..."
+  mkdir -p /etc/nginx/sites-enabled
+  ln -sf "$ROOT/nginx/square-cloud.conf" /etc/nginx/sites-enabled/square-cloud.conf
+  rm -f /etc/nginx/sites-enabled/default
+  nginx -t
+  systemctl reload nginx
+else
+  echo "[nginx] Pulando (usuario nao e root). Em Square Cloud o proxy e gerenciado pela plataforma."
+fi
 
 # 2. Client (install, build, start in background)
 echo "[2/3] Iniciando client (background)..."
