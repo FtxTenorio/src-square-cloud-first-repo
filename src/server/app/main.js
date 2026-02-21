@@ -57,9 +57,10 @@ const start = async () => {
         
         await nexus.start(process.env.DISCORD_SECRET_KEY);
         
-        // Start Fastify server
-        await fastify.listen({ port: process.env.SERVER_PORT, host:'0.0.0.0'});
-        logger.http.request('LISTEN', `http://0.0.0.0:${process.env.PORT}`, 200, 0);
+        // Porta: PORT (plataforma, ex. 80) ou SERVER_PORT (.env)
+        const port = Number(process.env.PORT) || Number(process.env.SERVER_PORT) || 8081;
+        await fastify.listen({ port, host: '0.0.0.0' });
+        logger.http.request('LISTEN', `http://0.0.0.0:${port}`, 200, 0);
         
     } catch (error) {
        logger.fatal('SYSTEM', 'Erro fatal na inicialização', error.message);
