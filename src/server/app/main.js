@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import Fastify from "fastify"
+import Fastify from "fastify";
+import cors from "@fastify/cors";
 import routes from "./routes/index.js";
 import nexus from './modules/nexus/index.js'
 import mongodb from './modules/mongodb/index.js';
@@ -11,7 +12,13 @@ const { logger } = nexus;
 
 const fastify = Fastify({
     logger: false // Disable fastify default logger, using our custom one
-})
+});
+
+await fastify.register(cors, {
+    origin: true, // Allow the request Origin (frontend on port 80)
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-User-Id"],
+});
 
 fastify.register(routes);
 

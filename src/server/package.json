@@ -12,6 +12,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
+    "@fastify/cors": "^10.1.0",
     "accepts": "^2.0.0",
     "axios": "^1.13.5",
     "body-parser": "^2.2.2",
