@@ -4,10 +4,10 @@ ROOT="$(cd "$(dirname "$0")" && pwd)"
 cd "$ROOT"
 
 # 1. Nginx: config + reload
-sudo ln -sf "$ROOT/nginx/square-cloud.conf" /etc/nginx/sites-enabled/square-cloud.conf
-sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t
-sudo systemctl reload nginx
+ln -sf "$ROOT/nginx/square-cloud.conf" /etc/nginx/sites-enabled/square-cloud.conf
+rm -f /etc/nginx/sites-enabled/default
+nginx -t
+systemctl reload nginx
 
 # 2. Client (install, build, start in background)
 (cd "$ROOT/src/client" && pnpm install && pnpm build && pnpm start) &
