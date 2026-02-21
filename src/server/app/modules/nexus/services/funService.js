@@ -285,8 +285,7 @@ export const roastCommand = {
             .setColor(0xe67e22)
             .setDescription(`${user.username}, ${roast}`)
             .setThumbnail(user.displayAvatarURL())
-            .setFooter({ text: '⚠️ Apenas brincadeira! Sem maldade!' });
-        
+            
         await interaction.reply({ embeds: [embed] });
     }
 };
