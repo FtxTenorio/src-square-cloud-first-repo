@@ -30,13 +30,18 @@ else
   echo "[nginx] Pulando (usuario nao e root). Em Square Cloud o proxy e gerenciado pela plataforma."
 fi
 
-# 2. Client (install, build, start in background) — porta 80
-echo "[2/3] Client: npm install, build, start (porta 80)..."
-(cd "$ROOT/src/client" && npm install && npm run build && npm run start) &
+# 2. Client: instala/builda só se precisar; depois sobe o build (porta 80)
+echo "[2/3] Client..."
+(cd "$ROOT/src/client" && \
+  ( [ ! -d node_modules ] && npm install || true ) && \
+  ( [ ! -d .next ] && echo "  Buildando (primeira vez ou build ausente)..." && npm run build || echo "  Rodando do build existente." ) && \
+  npm run start) &
 
-# 3. Server (install, start in background)
-echo "[3/3] Server: npm install, start..."
-(cd "$ROOT/src/server" && npm install && npm run start) &
+# 3. Server: instala só se precisar; depois sobe
+echo "[3/3] Server..."
+(cd "$ROOT/src/server" && \
+  ( [ ! -d node_modules ] && npm install || true ) && \
+  npm run start) &
 
 wait
 echo "[start.sh] Encerrado."
