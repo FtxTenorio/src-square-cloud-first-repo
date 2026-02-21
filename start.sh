@@ -37,8 +37,8 @@ echo "[1/3] Client: npm install..."
 echo "[2/3] Server: npm install..."
 (cd "$ROOT/src/server" && npm install --no-audit --no-fund)
 
-echo "[3/3] Client: build (um processo por vez)..."
-(cd "$ROOT/src/client" && NODE_OPTIONS="${NODE_OPTIONS:-} --max-old-space-size=1024" npm run build)
+echo "[3/3] Client: build (limite de RAM 384MB para evitar OOM)..."
+(cd "$ROOT/src/client" && NODE_OPTIONS="--max-old-space-size=384" npm run build)
 
 # Fase 2: sobe os dois processos (consumo menor que build)
 echo "[start] Subindo server e client..."
