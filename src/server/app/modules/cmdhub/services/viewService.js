@@ -140,8 +140,8 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
         <input type="text" name="name" value="${name}" required maxlength="100" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
-        <span style="font-weight: 500;">Horário (ex: 08:00)</span>
-        <input type="text" name="horario" value="${horario}" required pattern="[0-9]{1,2}:[0-9]{2}" placeholder="08:00" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <span style="font-weight: 500;">Horário</span>
+        <input type="time" name="horario" value="${horario}" required style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Repetir</span>
