@@ -60,6 +60,56 @@ export async function deleteRoutine(id, userId) {
 }
 
 /**
+ * Convert user-friendly time + recurrence to cron (min hour * * dow).
+ * @param {string} horario - "08:00" or "8:30" (HH:mm or H:mm)
+ * @param {string} repetir - one of: todo_dia, seg_a_sex, fim_de_semana, domingo..sabado
+ * @returns {string} cron expression, e.g. "0 8 * * 1-5"
+ */
+export function scheduleToCron(horario, repetir) {
+    const match = (horario || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+    if (!match) throw new Error('Horário inválido. Use formato 08:00 ou 8:30');
+    const hour = Math.max(0, Math.min(23, parseInt(match[1], 10)));
+    const minute = Math.max(0, Math.min(59, parseInt(match[2], 10)));
+    const min = String(minute);
+    const hr = String(hour);
+    const dowMap = {
+        todo_dia: '*',
+        seg_a_sex: '1-5',
+        fim_de_semana: '0,6',
+        domingo: '0',
+        segunda: '1',
+        terca: '2',
+        quarta: '3',
+        quinta: '4',
+        sexta: '5',
+        sabado: '6'
+    };
+    const dow = dowMap[repetir] ?? '*';
+    return `${min} ${hr} * * ${dow}`;
+}
+
+/**
+ * Map Discord user/guild locale to IANA timezone (default for rotina).
+ */
+export function getTimezoneFromLocale(locale) {
+    const map = {
+        'pt-BR': 'America/Sao_Paulo',
+        'pt': 'America/Sao_Paulo',
+        'en-GB': 'Europe/London',
+        'en-US': 'America/New_York',
+        'es': 'Europe/Madrid',
+        'es-419': 'America/Mexico_City',
+        'fr': 'Europe/Paris',
+        'de': 'Europe/Berlin',
+        'it': 'Europe/Rome',
+        'ja': 'Asia/Tokyo',
+        'ko': 'Asia/Seoul'
+    };
+    const base = (locale || 'en-GB').split('-')[0];
+    return map[locale] ?? map[base] ?? 'Europe/London';
+}
+
+/**
  * Parse items string from slash command into [{ label, condition }]
  * Format: "Label 1|condition1, Label 2|always" or one per line
  */
@@ -83,5 +133,7 @@ export default {
     getRoutinesByUser,
     getRoutineById,
     deleteRoutine,
+    scheduleToCron,
+    getTimezoneFromLocale,
     parseItemsString
 };
