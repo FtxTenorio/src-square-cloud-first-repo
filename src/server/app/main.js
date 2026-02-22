@@ -38,6 +38,18 @@ await fastify.register(cors, {
     preflightContinue: false,
 });
 
+// Parser para formulários HTML (application/x-www-form-urlencoded), ex.: edição de rotina
+fastify.addContentTypeParser('application/x-www-form-urlencoded', { parseAs: 'string' }, (req, body, done) => {
+    try {
+        const params = new URLSearchParams(body);
+        const result = {};
+        for (const [key, value] of params) result[key] = value;
+        done(null, result);
+    } catch (err) {
+        done(err, undefined);
+    }
+});
+
 // Garante CORS em todas as respostas (incluindo erros/timeouts do app)
 fastify.addHook("onSend", (request, reply, payload, done) => {
     const origin = request.headers.origin;
