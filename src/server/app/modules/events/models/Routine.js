@@ -19,6 +19,7 @@ const routineSchema = new mongoose.Schema({
         }],
         default: []
     },
+    oneTime: { type: Boolean, default: false },
     enabled: { type: Boolean, default: true },
     scheduleId: { type: String, default: null }
 }, { timestamps: true });

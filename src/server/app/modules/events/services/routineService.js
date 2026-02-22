@@ -10,11 +10,11 @@ import logger from '../../nexus/utils/logger.js';
 
 /**
  * Create a new routine and, se configurado, cria schedule no EventBridge.
- * @param {object} data - { userId, guildId?, name, cron, timezone, items }
+ * @param {object} data - { userId, guildId?, name, cron, timezone, items, oneTime? }
  * @returns {Promise<object>} Saved routine document (com scheduleId se criado)
  */
 export async function createRoutine(data) {
-    const { userId, guildId, name, cron, timezone, items = [] } = data;
+    const { userId, guildId, name, cron, timezone, items = [], oneTime = false } = data;
     if (!userId || !name || !cron || !timezone) {
         throw new Error('userId, name, cron e timezone são obrigatórios');
     }
@@ -24,7 +24,8 @@ export async function createRoutine(data) {
         name: name.trim(),
         cron: cron.trim(),
         timezone: (timezone || 'Europe/London').trim(),
-        items: Array.isArray(items) ? items : []
+        items: Array.isArray(items) ? items : [],
+        oneTime: Boolean(oneTime)
     });
     logger.info('EVENTS', `Rotina criada: ${routine.name} (${routine._id}) por ${userId}`);
 
@@ -43,14 +44,35 @@ export async function createRoutine(data) {
 }
 
 /**
- * List routines by user (and optional guild)
+ * List routines by user (and optional guild). Ordenado do mais antigo ao mais novo.
  * @param {string} userId - Discord user ID
  * @param {string} [guildId] - Optional guild filter
  */
 export async function getRoutinesByUser(userId, guildId = null) {
     const query = { userId };
     if (guildId != null) query.guildId = guildId;
-    return Routine.find(query).sort({ createdAt: -1 }).lean();
+    return Routine.find(query).sort({ createdAt: 1 }).lean();
+}
+
+/**
+ * Desativa uma rotina após rodar uma vez (oneTime): remove o schedule e marca enabled = false.
+ * Usado pelo trigger após enviar a DM quando routine.oneTime === true.
+ */
+export async function disableRoutine(routineId) {
+    const routine = await Routine.findOne({ _id: routineId });
+    if (!routine) return null;
+    if (routine.scheduleId && eventBridge.isConfigured()) {
+        try {
+            await eventBridge.deleteSchedule(routine.scheduleId);
+        } catch (err) {
+            logger.warn('EVENTS', `Erro ao remover schedule ${routine.scheduleId}: ${err.message}`);
+        }
+    }
+    routine.scheduleId = null;
+    routine.enabled = false;
+    await routine.save();
+    logger.info('EVENTS', `Rotina desativada (uma vez): ${routine.name} (${routineId})`);
+    return routine;
 }
 
 /**
@@ -95,6 +117,7 @@ export function scheduleToCron(horario, repetir) {
     const hr = String(hour);
     const dowMap = {
         todo_dia: '*',
+        uma_vez: '*',
         seg_a_sex: '1-5',
         fim_de_semana: '0,6',
         domingo: '0',
@@ -154,6 +177,7 @@ export default {
     getRoutinesByUser,
     getRoutineById,
     deleteRoutine,
+    disableRoutine,
     scheduleToCron,
     getTimezoneFromLocale,
     parseItemsString

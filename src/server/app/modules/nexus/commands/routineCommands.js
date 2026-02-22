@@ -18,6 +18,7 @@ const TIMEZONE_CHOICES = [
 ];
 
 const REPETIR_CHOICES = [
+    { name: 'Uma vez só (não repetir)', value: 'uma_vez' },
     { name: 'Todo dia', value: 'todo_dia' },
     { name: 'Segunda a Sexta', value: 'seg_a_sex' },
     { name: 'Fim de semana (Sáb e Dom)', value: 'fim_de_semana' },
@@ -99,6 +100,7 @@ export const rotinaCriarCommand = {
             const items = routineService.parseItemsString(itensStr || '');
 
             const cron = routineService.scheduleToCron(horario, repetir);
+            const oneTime = repetir === 'uma_vez';
 
             const routine = await routineService.createRoutine({
                 userId,
@@ -106,7 +108,8 @@ export const rotinaCriarCommand = {
                 name,
                 cron,
                 timezone,
-                items
+                items,
+                oneTime
             });
 
             const repetirLabel = REPETIR_CHOICES.find(c => c.value === repetir)?.name ?? repetir;
@@ -161,9 +164,13 @@ export const rotinaListarCommand = {
                 return;
             }
 
+            const active = routines.filter(r => r.enabled !== false);
+            const desativadas = routines.filter(r => r.enabled === false);
+
             const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
-            const blocks = routines.map((r, i) => {
+            const makeBlock = (r, index, isDesativada) => {
                 const { horario, repetir } = cronToHuman(r.cron);
+                const repetirLabel = r.oneTime ? 'Uma vez só' : repetir;
                 const fuso = timezoneToLabel(r.timezone);
                 const itens = (r.items || []).length;
                 const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
@@ -172,19 +179,32 @@ export const rotinaListarCommand = {
                 const deleteLine = deleteUrl
                     ? `└ 🗑️ [Apagar](${deleteUrl})`
                     : `└ 🗑️ Apagar: \`${deletePath}\` (configure PUBLIC_API_URL para link direto)`;
+                const title = isDesativada ? `**~~${index}. ${r.name}~~**` : `**${index}. ${r.name}**`;
                 return [
-                    `**${i + 1}. ${r.name}**`,
-                    `├ 🕐 ${horario}  ·  ${repetir}`,
+                    title,
+                    `├ 🕐 ${horario}  ·  ${repetirLabel}`,
                     `├ 🌍 ${fuso}  ·  ${itensStr}`,
                     deleteLine
                 ].join('\n');
-            });
+            };
+
+            const activeBlocks = active.map((r, i) => makeBlock(r, i + 1, false));
+            const desativadasBlocks = desativadas.map((r, i) => makeBlock(r, i + 1, true));
+
+            let description = '';
+            if (activeBlocks.length > 0) {
+                description += activeBlocks.join('\n\n');
+            }
+            if (desativadasBlocks.length > 0) {
+                if (description) description += '\n\n';
+                description += `**━━━ Desativadas ━━━**\n\n` + desativadasBlocks.join('\n\n');
+            }
 
             const embed = new EmbedBuilder()
                 .setTitle('📋 Suas rotinas')
                 .setColor(0x5865F2)
-                .setDescription(blocks.join('\n\n'))
-                .setFooter({ text: `${routines.length} rotina(s) · Clique em Apagar para remover (e schedule no EventBridge)` })
+                .setDescription(description)
+                .setFooter({ text: `${active.length} ativa(s), ${desativadas.length} desativada(s) · Do mais antigo ao mais novo` })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });

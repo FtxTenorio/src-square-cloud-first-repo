@@ -50,6 +50,10 @@ async function eventsRoutes(fastify) {
                 logger.warn('EVENTS', 'Bot Discord não está pronto; DM da rotina não enviada');
             }
 
+            if (routine.oneTime) {
+                await routineService.disableRoutine(routineId);
+            }
+
             return {
                 success: true,
                 routineId,
