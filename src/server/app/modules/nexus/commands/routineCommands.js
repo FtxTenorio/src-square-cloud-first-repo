@@ -30,6 +30,34 @@ const REPETIR_CHOICES = [
     { name: 'Domingo', value: 'domingo' }
 ];
 
+/** Cron (min hr * * dow) → { horario: "08:00", repetir: "Segunda a Sexta" } */
+function cronToHuman(cron) {
+    if (!cron || typeof cron !== 'string') return { horario: '—', repetir: '—' };
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length < 5) return { horario: cron, repetir: '—' };
+    const [min, hr] = parts;
+    const dow = parts[4];
+    const hour = parseInt(hr, 10);
+    const minute = parseInt(min, 10);
+    const horario = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    const dowLabels = {
+        '*': 'Todo dia',
+        '1-5': 'Segunda a Sexta',
+        '0,6': 'Fim de semana (Sáb e Dom)',
+        '0': 'Domingo', '1': 'Segunda', '2': 'Terça', '3': 'Quarta',
+        '4': 'Quinta', '5': 'Sexta', '6': 'Sábado'
+    };
+    const repetir = dowLabels[dow] ?? dow;
+    return { horario, repetir };
+}
+
+/** IANA timezone → nome curto para exibição */
+function timezoneToLabel(tz) {
+    if (!tz) return '—';
+    const found = TIMEZONE_CHOICES.find(c => c.value === tz);
+    return found ? found.name : tz.split('/').pop()?.replace(/_/g, ' ') ?? tz;
+}
+
 export const rotinaCriarCommand = {
     data: new SlashCommandBuilder()
         .setName('rotina_criar')
@@ -133,14 +161,24 @@ export const rotinaListarCommand = {
                 return;
             }
 
+            const blocks = routines.map((r, i) => {
+                const { horario, repetir } = cronToHuman(r.cron);
+                const fuso = timezoneToLabel(r.timezone);
+                const itens = (r.items || []).length;
+                const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
+                return [
+                    `**${i + 1}. ${r.name}**`,
+                    `├ 🕐 ${horario}  ·  ${repetir}`,
+                    `├ 🌍 ${fuso}  ·  ${itensStr}`,
+                    `└ *ID: \`${r._id}\`*`
+                ].join('\n');
+            });
+
             const embed = new EmbedBuilder()
                 .setTitle('📋 Suas rotinas')
                 .setColor(0x5865F2)
-                .setDescription(routines.map((r, i) => {
-                    const itens = (r.items || []).length;
-                    return `**${i + 1}. ${r.name}** — \`${r.cron}\` ${r.timezone} (${itens} itens)`;
-                }).join('\n'))
-                .setFooter({ text: `${routines.length} rotina(s)` })
+                .setDescription(blocks.join('\n\n'))
+                .setFooter({ text: `${routines.length} rotina(s) · Use o ID para editar ou remover` })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
