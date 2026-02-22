@@ -176,7 +176,6 @@ export const rotinaListarCommand = {
                     `**${i + 1}. ${r.name}**`,
                     `├ 🕐 ${horario}  ·  ${repetir}`,
                     `├ 🌍 ${fuso}  ·  ${itensStr}`,
-                    `├ *ID: \`${r._id}\`*`,
                     deleteLine
                 ].join('\n');
             });
