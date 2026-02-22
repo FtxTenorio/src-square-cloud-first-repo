@@ -4,6 +4,7 @@
  */
 
 import * as routineService from '../../events/services/routineService.js';
+import * as userPreferenceService from '../../events/services/userPreferenceService.js';
 import viewService from '../services/viewService.js';
 import logger from '../../nexus/utils/logger.js';
 
@@ -158,9 +159,14 @@ export async function postEditRoutine(request, reply) {
                 message: 'Rotina não encontrada ou você não é o dono.'
             });
         }
+        let timezoneSaved = false;
+        if (timezone && String(timezone).trim()) {
+            await userPreferenceService.saveTimezone(userId, timezone);
+            timezoneSaved = true;
+        }
         logger.http.request('POST', `/routines/${id}/edit`, 200, 0);
         reply.type('text/html').status(200);
-        return viewService.renderRoutineEditSuccess(routine.name);
+        return viewService.renderRoutineEditSuccess(routine.name, { timezoneSaved });
     } catch (err) {
         logger.error('CMDHUB', 'postEditRoutine', err.message);
         reply.type('text/html').status(500);

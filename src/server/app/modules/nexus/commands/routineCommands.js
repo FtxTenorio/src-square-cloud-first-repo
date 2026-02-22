@@ -6,6 +6,7 @@
 
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import * as routineService from '../../events/services/routineService.js';
+import * as userPreferenceService from '../../events/services/userPreferenceService.js';
 import logger from '../utils/logger.js';
 
 const TIMEZONE_CHOICES = [
@@ -95,7 +96,8 @@ export const rotinaCriarCommand = {
             const repetir = interaction.options.getString('repetir');
             const timezoneOpt = interaction.options.getString('timezone');
             const locale = interaction.locale || interaction.guildLocale || 'en-GB';
-            const timezone = timezoneOpt || routineService.getTimezoneFromLocale(locale);
+            const savedTimezone = await userPreferenceService.getTimezone(userId);
+            const timezone = timezoneOpt || savedTimezone || routineService.getTimezoneFromLocale(locale);
             const itensStr = interaction.options.getString('itens');
             const items = routineService.parseItemsString(itensStr || '');
 
@@ -111,6 +113,10 @@ export const rotinaCriarCommand = {
                 items,
                 oneTime
             });
+
+            if (timezoneOpt) {
+                await userPreferenceService.saveTimezone(userId, timezone);
+            }
 
             const repetirLabel = REPETIR_CHOICES.find(c => c.value === repetir)?.name ?? repetir;
             const embed = new EmbedBuilder()
@@ -128,8 +134,13 @@ export const rotinaCriarCommand = {
                             : '*Nenhum item*'
                     }
                 )
-                .setFooter({ text: `ID: ${routine._id} • Fase 1: agendamento na nuvem em breve` })
                 .setTimestamp();
+
+            let footerText = 'Fase 1: agendamento na nuvem em breve';
+            if (timezoneOpt) {
+                footerText = '💡 Seu fuso foi salvo nas preferências. Na próxima rotina não será preciso escolher de novo.';
+            }
+            embed.setFooter({ text: footerText });
 
             await interaction.editReply({ embeds: [embed] });
         } catch (err) {

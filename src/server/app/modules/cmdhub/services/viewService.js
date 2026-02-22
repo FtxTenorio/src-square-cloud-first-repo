@@ -242,8 +242,13 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
 
 /**
  * Página HTML de sucesso após editar rotina.
+ * @param {string} routineName - Nome da rotina
+ * @param {object} [options] - { timezoneSaved?: boolean }
  */
-export function renderRoutineEditSuccess(routineName) {
+export function renderRoutineEditSuccess(routineName, options = {}) {
+    const timezoneTip = options.timezoneSaved
+        ? '<p style="margin: 0.75rem 0 0; font-size: 0.875rem; opacity: 0.9;">💡 Seu fuso foi salvo nas preferências. Na próxima vez não será preciso definir o timezone.</p>'
+        : '';
     return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -256,6 +261,7 @@ export function renderRoutineEditSuccess(routineName) {
     <p style="font-size: 2rem; margin: 0 0 0.5rem;">✅</p>
     <h1 style="font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem;">Rotina atualizada</h1>
     <p style="margin: 0; opacity: 0.9;">"${escapeHtml(routineName)}" foi salva.</p>
+    ${timezoneTip}
   </div>
 </body>
 </html>`;
