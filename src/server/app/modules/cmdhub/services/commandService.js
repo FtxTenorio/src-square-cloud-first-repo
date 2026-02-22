@@ -5,7 +5,8 @@
 
 import { REST, Routes } from 'discord.js';
 import Command from '../models/Command.js';
-import { builtInCommandOptionsForDeploy } from '../../nexus/commands/customCommands.js';
+import { builtInCommandOptionsForDeploy as customBuiltIn } from '../../nexus/commands/customCommands.js';
+import { builtInCommandOptionsForDeploy as routineBuiltIn } from '../../nexus/commands/routineCommands.js';
 import redis from '../../../../database/redis/index.js';
 import logger from '../../nexus/utils/logger.js';
 import rateLimiter from './rateLimiter.js';
@@ -23,7 +24,7 @@ let applicationId = null;
 
 function getBuiltInCommandOptions(commandName) {
     const name = (commandName || '').toLowerCase();
-    return builtInCommandOptionsForDeploy[name] ?? null;
+    return customBuiltIn[name] ?? routineBuiltIn[name] ?? null;
 }
 
 /**
