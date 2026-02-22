@@ -5,6 +5,8 @@
 
 import { REST, Routes } from 'discord.js';
 import Command from '../models/Command.js';
+import { builtInCommandOptionsForDeploy as customBuiltIn } from '../../nexus/commands/customCommands.js';
+import { builtInCommandOptionsForDeploy as routineBuiltIn } from '../../nexus/commands/routineCommands.js';
 import redis from '../../../../database/redis/index.js';
 import logger from '../../nexus/utils/logger.js';
 import rateLimiter from './rateLimiter.js';
@@ -19,6 +21,11 @@ const notDeleted = { deletedAt: null };
 // Discord REST client and config
 let rest = null;
 let applicationId = null;
+
+function getBuiltInCommandOptions(commandName) {
+    const name = (commandName || '').toLowerCase();
+    return customBuiltIn[name] ?? routineBuiltIn[name] ?? null;
+}
 
 /**
  * Initialize Discord REST client
@@ -432,7 +439,14 @@ export async function deployToDiscord(appId = null, guildId = null) {
             }
         }
         
-        const commandData = ourCommands.map(cmd => cmd.toDiscordAPI());
+        const commandData = ourCommands.map(cmd => {
+            const data = cmd.toDiscordAPI();
+            const builtInOptions = getBuiltInCommandOptions(cmd.name);
+            if (builtInOptions?.length) {
+                data.options = builtInOptions;
+            }
+            return data;
+        });
         const result = await rest.put(route, { body: commandData });
         
         for (const deployed of result) {
