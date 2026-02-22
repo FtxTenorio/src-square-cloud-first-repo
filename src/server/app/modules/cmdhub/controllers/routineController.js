@@ -4,6 +4,7 @@
  */
 
 import * as routineService from '../../events/services/routineService.js';
+import viewService from '../services/viewService.js';
 import logger from '../../nexus/utils/logger.js';
 
 /**
@@ -45,32 +46,42 @@ export async function deleteRoutine(request, reply) {
 
 /**
  * GET /routines/:id/delete?userId=xxx
- * Permite apagar via link (ex.: link no embed do Discord). Chama o backend diretamente.
+ * Permite apagar via link (ex.: link no embed do Discord). Retorna HTML com resultado.
  */
 export async function getDeleteRoutine(request, reply) {
     try {
         const { id } = request.params;
         const userId = request.query?.userId;
         if (!id || !userId) {
-            reply.status(400);
-            return { success: false, error: 'id e userId (query) são obrigatórios' };
+            reply.type('text/html').status(400);
+            return viewService.renderRoutineDeletePage({
+                success: false,
+                message: 'id e userId (query) são obrigatórios.'
+            });
         }
 
         const routine = await routineService.deleteRoutine(id, userId);
         if (!routine) {
-            reply.status(404);
-            return { success: false, error: 'Rotina não encontrada ou você não é o dono' };
+            reply.type('text/html').status(404);
+            return viewService.renderRoutineDeletePage({
+                success: false,
+                message: 'Rotina não encontrada ou você não é o dono.'
+            });
         }
 
         logger.http.request('GET', `/routines/${id}/delete`, 200, 0);
-        return {
+        reply.type('text/html').status(200);
+        return viewService.renderRoutineDeletePage({
             success: true,
-            message: `Rotina "${routine.name}" apagada.`,
-            data: { id, name: routine.name }
-        };
+            message: 'Rotina apagada.',
+            routineName: routine.name
+        });
     } catch (err) {
         logger.error('CMDHUB', 'getDeleteRoutine', err.message);
-        reply.status(500);
-        return { success: false, error: err.message };
+        reply.type('text/html').status(500);
+        return viewService.renderRoutineDeletePage({
+            success: false,
+            message: err.message || 'Erro ao apagar rotina.'
+        });
     }
 }
