@@ -14,6 +14,7 @@ import logger from '../../nexus/utils/logger.js';
 export async function listCommands(request, reply) {
     try {
         const { category, enabled, guildId, status, source } = request.query;
+        logger.info('CMDHUB', `GET /commands query=${JSON.stringify({ category, enabled, guildId, status, source })}`);
         
         // If source=discord, fetch directly from Discord API
         if (source === 'discord') {
@@ -60,9 +61,11 @@ export async function getCommand(request, reply) {
     try {
         const { name } = request.params;
         const guildId = request.query.guildId;
+        logger.info('CMDHUB', `GET /commands/${name} guildId=${guildId ?? 'null'}`);
         const command = await commandService.getCommandByName(name, guildId);
         
         if (!command) {
+            logger.warn('CMDHUB', `Comando não encontrado: ${name} (guildId=${guildId ?? 'null'})`);
             reply.status(404);
             return { success: false, error: `Comando não encontrado: ${name}` };
         }
@@ -84,14 +87,17 @@ export async function getCommand(request, reply) {
 export async function createCommand(request, reply) {
     try {
         const { name, description, options, category, enabled, guildId, defaultMemberPermissions, dmPermission } = request.body;
+        logger.info('CMDHUB', `POST /commands name=${name} guildId=${guildId ?? 'null'} category=${category ?? 'custom'}`);
         
         if (!name || !description) {
+            logger.warn('CMDHUB', 'Create command: nome ou descrição ausente');
             reply.status(400);
             return { success: false, error: 'Nome e descrição são obrigatórios' };
         }
         
         const existing = await commandService.getCommandByName(name, guildId);
         if (existing) {
+            logger.warn('CMDHUB', `Comando já existe neste escopo: ${name} (guildId=${guildId ?? 'null'})`);
             reply.status(409);
             return { success: false, error: `Comando já existe neste escopo: ${name}` };
         }
@@ -126,6 +132,7 @@ export async function updateCommand(request, reply) {
     try {
         const { name } = request.params;
         const { guildId, ...updates } = request.body || {};
+        logger.info('CMDHUB', `PUT /commands/${name} guildId=${guildId ?? 'null'} keys=${Object.keys(updates).join(',') || 'none'}`);
         
         const rateCheck = await rateLimiter.checkRateLimit('update', name);
         if (!rateCheck.allowed) {
@@ -155,10 +162,13 @@ export async function updateCommand(request, reply) {
         return { success: true, data: command };
     } catch (error) {
         if (error.message.includes('não encontrado')) {
+            logger.warn('CMDHUB', `Update: comando não encontrado ${request.params?.name}`);
             reply.status(404);
         } else if (error.message.includes('Rate limit')) {
+            logger.warn('CMDHUB', `Update: rate limit ${request.params?.name}`);
             reply.status(429);
         } else {
+            logger.error('CMDHUB', `Erro ao atualizar comando ${request.params?.name}`, error.message);
             reply.status(500);
         }
         return { success: false, error: error.message };
@@ -173,6 +183,7 @@ export async function deleteCommand(request, reply) {
     try {
         const { name } = request.params;
         const guildId = request.body?.guildId ?? request.query.guildId;
+        logger.info('CMDHUB', `DELETE /commands/${name} guildId=${guildId ?? 'null'} (soft delete)`);
         
         await commandService.deleteCommand(name, guildId);
         
@@ -181,8 +192,10 @@ export async function deleteCommand(request, reply) {
         return { success: true, message: `Comando deletado: ${name}` };
     } catch (error) {
         if (error.message.includes('não encontrado')) {
+            logger.warn('CMDHUB', `Delete: comando não encontrado ${name} (guildId=${request.body?.guildId ?? request.query?.guildId ?? 'null'})`);
             reply.status(404);
         } else {
+            logger.error('CMDHUB', `Erro ao deletar comando ${name}`, error.message);
             reply.status(500);
         }
         return { success: false, error: error.message };
@@ -197,6 +210,7 @@ export async function toggleCommand(request, reply) {
     try {
         const { name } = request.params;
         const { enabled, guildId } = request.body || {};
+        logger.info('CMDHUB', `PATCH /commands/${name}/toggle enabled=${enabled} guildId=${guildId ?? 'null'}`);
         
         if (enabled === undefined) {
             reply.status(400);
@@ -243,6 +257,7 @@ export async function getStats(request, reply) {
 export async function syncFromDiscord(request, reply) {
     try {
         const { guildId } = request.body || {};
+        logger.info('CMDHUB', `POST /commands/sync guildId=${guildId ?? 'null'}`);
         
         // applicationId is optional - will use the one configured in cmdhub
         const appId = commandService.getApplicationId();
@@ -289,6 +304,7 @@ export async function syncFromDiscord(request, reply) {
 export async function deployToDiscord(request, reply) {
     try {
         const { guildId } = request.body || {};
+        logger.info('CMDHUB', `POST /commands/deploy guildId=${guildId ?? 'null'}`);
         
         const appId = commandService.getApplicationId();
         if (!appId) {
@@ -335,9 +351,11 @@ export async function deleteFromDiscord(request, reply) {
     try {
         const { name } = request.params;
         const { guildId } = request.body || {};
+        logger.info('CMDHUB', `DELETE /commands/${name}/discord guildId=${guildId ?? 'null'}`);
         
         const appId = commandService.getApplicationId();
         if (!appId) {
+            logger.warn('CMDHUB', 'deleteFromDiscord: Application ID não configurado');
             reply.status(400);
             return { success: false, error: 'Application ID não configurado' };
         }
@@ -349,8 +367,10 @@ export async function deleteFromDiscord(request, reply) {
         return { success: true, ...result };
     } catch (error) {
         if (error.message.includes('não encontrado')) {
+            logger.warn('CMDHUB', `deleteFromDiscord: comando não encontrado ${name} (guildId=${request.body?.guildId ?? 'null'}) - ${error.message}`);
             reply.status(404);
         } else {
+            logger.error('CMDHUB', `Erro ao deletar do Discord: ${name}`, error.message);
             reply.status(500);
         }
         return { success: false, error: error.message };

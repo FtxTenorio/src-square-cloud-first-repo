@@ -1,5 +1,6 @@
 import redis from '../../database/redis/index.js';
 import cmdhub from '../modules/cmdhub/index.js';
+import logger from '../modules/nexus/utils/logger.js';
 
 const CACHE_KEY = 'hello_world_cache';
 const CACHE_TTL = 60; // seconds
@@ -14,14 +15,14 @@ async function routes(fastify, options) {
             const cached = await redis.get(CACHE_KEY);
             
             if (cached) {
-                console.log('Cache HIT - returning cached data');
+                logger.debug('HTTP', 'Cache HIT - returning cached data');
                 reply.header('X-Cache', 'HIT');
                 reply.header('X-Cache-Source', 'Redis');
                 return JSON.parse(cached);
             }
             
             // Cache MISS - generate response
-            console.log('Cache MISS - generating new response');
+            logger.debug('HTTP', 'Cache MISS - generating new response');
             const response = { hello: 'world', timestamp: new Date().toISOString() };
             
             // Store in Redis with TTL
@@ -31,7 +32,7 @@ async function routes(fastify, options) {
             reply.header('X-Cache-Source', 'Redis');
             return response;
         } catch (error) {
-            console.error('Redis error:', error.message);
+            logger.error('REDIS', 'Erro ao usar cache na rota /', error.message);
             // Fallback if Redis fails
             reply.header('X-Cache', 'ERROR');
             return { hello: 'world', timestamp: new Date().toISOString() };

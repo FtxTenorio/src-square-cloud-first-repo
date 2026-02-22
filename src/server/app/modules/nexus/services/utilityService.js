@@ -2,6 +2,7 @@
  * Utility Commands - Weather, Translate, Poll, Remind, Calculator
  */
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import logger from '../utils/logger.js';
 
 // Active reminders (in-memory, consider Redis for persistence)
 const reminders = new Map();
@@ -208,7 +209,7 @@ export const pollCommand = {
                 await interaction.followUp({ embeds: [resultsEmbed] });
                 polls.delete(message.id);
             } catch (e) {
-                console.error('Error ending poll:', e);
+                logger.error('CMD', 'Erro ao encerrar poll', e.message);
             }
         }, duration * 60000);
     }

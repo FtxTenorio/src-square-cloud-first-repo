@@ -60,6 +60,14 @@ export default function CommandsClient() {
   const [originalCategory, setOriginalCategory] = useState("");
   const [originalDescription, setOriginalDescription] = useState("");
   const [detailSaving, setDetailSaving] = useState(false);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createName, setCreateName] = useState("");
+  const [createDescription, setCreateDescription] = useState("");
+  const [createCategory, setCreateCategory] = useState("custom");
+  const [createScope, setCreateScope] = useState<"global" | "guild">("global");
+  const [createGuildId, setCreateGuildId] = useState("");
+  const [createEnabled, setCreateEnabled] = useState(true);
+  const [createSaving, setCreateSaving] = useState(false);
 
   const scopeGuildId = scope === "global" ? null : guildId || null;
 
@@ -341,6 +349,83 @@ export default function CommandsClient() {
     }
   };
 
+  const handleCreateCommand = async () => {
+    const name = createName.trim().toLowerCase();
+    if (!name) {
+      setError("Nome é obrigatório");
+      return;
+    }
+    if (name.length > 32) {
+      setError("Nome deve ter no máximo 32 caracteres");
+      return;
+    }
+    if (!createDescription.trim()) {
+      setError("Descrição é obrigatória");
+      return;
+    }
+    if (createDescription.length > 100) {
+      setError("Descrição deve ter no máximo 100 caracteres");
+      return;
+    }
+    if (createScope === "guild" && !createGuildId.trim()) {
+      setError("Informe o Guild ID para comando de servidor");
+      return;
+    }
+    if (!ALLOWED_CATEGORIES.includes(createCategory as (typeof ALLOWED_CATEGORIES)[number])) {
+      setError("Categoria inválida");
+      return;
+    }
+    setCreateSaving(true);
+    setError(null);
+    try {
+      const body: {
+        name: string;
+        description: string;
+        category: string;
+        enabled: boolean;
+        guildId?: string | null;
+      } = {
+        name,
+        description: createDescription.trim(),
+        category: createCategory,
+        enabled: createEnabled,
+      };
+      if (createScope === "guild" && createGuildId.trim()) body.guildId = createGuildId.trim();
+      else body.guildId = null;
+      const res = await fetch(`${base}/commands`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao criar comando");
+      setCreateModalOpen(false);
+      setCreateName("");
+      setCreateDescription("");
+      setCreateCategory("custom");
+      setCreateScope("global");
+      setCreateGuildId("");
+      setCreateEnabled(true);
+      await fetchCommands();
+      await fetchStats();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao criar comando");
+    } finally {
+      setCreateSaving(false);
+    }
+  };
+
+  const openCreateModal = () => {
+    setError(null);
+    setCreateName("");
+    setCreateDescription("");
+    setCreateCategory("custom");
+    setCreateScope("global");
+    setCreateGuildId("");
+    setCreateEnabled(true);
+    setCreateModalOpen(true);
+  };
+
   const categories = ["utility", "moderation", "fun", "ai", "custom", "system"];
 
   return (
@@ -373,6 +458,12 @@ export default function CommandsClient() {
               </span>
             );
           })()}
+          <button
+            onClick={openCreateModal}
+            className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+          >
+            Criar comando
+          </button>
           <button
             onClick={handleSync}
             disabled={syncing}
@@ -645,6 +736,110 @@ export default function CommandsClient() {
                 className="rounded-md bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-50"
               >
                 {actionLoading ? "Deletando…" : "Deletar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {createModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !createSaving && setCreateModalOpen(false)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-dialog-title"
+        >
+          <div
+            className="rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-w-md w-full p-5 max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="create-dialog-title" className="text-lg font-semibold text-white mb-4">
+              Criar comando
+            </h2>
+            <div className="space-y-3 text-sm">
+              <div>
+                <label className="text-zinc-500 block text-xs uppercase tracking-wider mb-1">Nome *</label>
+                <input
+                  type="text"
+                  value={createName}
+                  onChange={(e) => setCreateName(e.target.value)}
+                  maxLength={32}
+                  placeholder="nome-do-comando"
+                  className="w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 font-mono text-white placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <p className="mt-1 text-xs text-zinc-500">{createName.length}/32 (será salvo em minúsculas)</p>
+              </div>
+              <div>
+                <label className="text-zinc-500 block text-xs uppercase tracking-wider mb-1">Descrição *</label>
+                <input
+                  type="text"
+                  value={createDescription}
+                  onChange={(e) => setCreateDescription(e.target.value)}
+                  maxLength={100}
+                  placeholder="O que o comando faz"
+                  className="w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-200 placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+                <p className="mt-1 text-xs text-zinc-500">{createDescription.length}/100</p>
+              </div>
+              <div>
+                <label className="text-zinc-500 block text-xs uppercase tracking-wider mb-1">Categoria</label>
+                <select
+                  value={createCategory}
+                  onChange={(e) => setCreateCategory(e.target.value)}
+                  className="w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  {ALLOWED_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-zinc-500 block text-xs uppercase tracking-wider mb-1">Escopo</label>
+                <select
+                  value={createScope}
+                  onChange={(e) => setCreateScope(e.target.value as "global" | "guild")}
+                  className="w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value="global">Global</option>
+                  <option value="guild">Guild (servidor)</option>
+                </select>
+                {createScope === "guild" && (
+                  <input
+                    type="text"
+                    placeholder="Guild ID"
+                    value={createGuildId}
+                    onChange={(e) => setCreateGuildId(e.target.value)}
+                    className="mt-2 w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-2 text-zinc-200 placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                )}
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer text-sm text-zinc-300">
+                <input
+                  type="checkbox"
+                  checked={createEnabled}
+                  onChange={(e) => setCreateEnabled(e.target.checked)}
+                  className="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500"
+                />
+                Comando ativo (enabled)
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 mt-5 pt-3 border-t border-zinc-700">
+              <button
+                type="button"
+                onClick={() => !createSaving && setCreateModalOpen(false)}
+                disabled={createSaving}
+                className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleCreateCommand}
+                disabled={createSaving}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {createSaving ? "Criando…" : "Criar"}
               </button>
             </div>
           </div>

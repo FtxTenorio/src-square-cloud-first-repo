@@ -7,6 +7,7 @@ import levelService from '../services/levelService.js';
 import ai from '../ai/index.js';
 import { getPersonalityChoices } from '../ai/personalities.js';
 import config from '../core/config.js';
+import logger from '../utils/logger.js';
 
 /**
  * Level command - Show user's level
@@ -21,19 +22,18 @@ export const levelCommand = {
                 .setRequired(false)),
     
     async execute(interaction) {
-        const user = interaction.options.getUser('usuario') || interaction.user;
-        const guildId = interaction.guild?.id || 'DM';
-        
-        const stats = await levelService.getUserStats(user.id, guildId);
-        
-        if (!stats) {
-            return interaction.reply({ 
-                content: `${user.username} ainda não tem XP neste servidor.`, 
-                ephemeral: true 
-            });
+        try {
+            const user = interaction.options.getUser('usuario') || interaction.user;
+            const guildId = interaction.guild?.id || 'DM';
+            const stats = await levelService.getUserStats(user.id, guildId);
+            if (!stats) {
+                return interaction.reply({ content: `${user.username} ainda não tem XP neste servidor.`, ephemeral: true });
+            }
+            await interaction.reply(levelService.formatLevelCard(stats));
+        } catch (err) {
+            logger.error('CMD', 'Erro no comando /level', err.message);
+            await interaction.reply({ content: 'Não foi possível carregar o nível. Tente novamente.', ephemeral: true }).catch(() => {});
         }
-        
-        await interaction.reply(levelService.formatLevelCard(stats));
     }
 };
 
@@ -46,14 +46,13 @@ export const leaderboardCommand = {
         .setDescription('Mostra o ranking do servidor'),
     
     async execute(interaction) {
-        const guildId = interaction.guild?.id || 'DM';
-        const leaderboard = await levelService.getLeaderboard(guildId, 10);
-        
-        if (leaderboard.length === 0) {
-            return interaction.reply('Ninguém tem XP ainda! Comece a conversar para ganhar pontos.');
-        }
-        
-        const medals = ['🥇', '🥈', '🥉'];
+        try {
+            const guildId = interaction.guild?.id || 'DM';
+            const leaderboard = await levelService.getLeaderboard(guildId, 10);
+            if (leaderboard.length === 0) {
+                return interaction.reply('Ninguém tem XP ainda! Comece a conversar para ganhar pontos.');
+            }
+            const medals = ['🥇', '🥈', '🥉'];
         const list = leaderboard.map((user, i) => {
             const medal = medals[i] || `**${i + 1}.**`;
             return `${medal} **${user.username}** - Nível ${user.level} (${user.xp} XP)`;
@@ -65,8 +64,11 @@ export const leaderboardCommand = {
             .setDescription(list)
             .setFooter({ text: 'Top 10 usuários mais ativos' })
             .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed] });
+            await interaction.reply({ embeds: [embed] });
+        } catch (err) {
+            logger.error('CMD', 'Erro no comando /leaderboard', err.message);
+            await interaction.reply({ content: 'Não foi possível carregar o ranking.', ephemeral: true }).catch(() => {});
+        }
     }
 };
 
@@ -98,21 +100,81 @@ export const personalityCommand = {
     
     async execute(interaction) {
         const personality = interaction.options.getString('tipo');
+        const guildName = interaction.guild?.name ?? 'DM';
+        logger.info('CMD', `personality: ${interaction.user.username} definiu ${personality} (${guildName})`);
         
         ai.setUserPersonality(interaction.user.id, personality);
-        const personalities = ai.PERSONALITIES;
-        const chosen = personalities[personality];
+        const personalities = ai.PERSONALITIES || {};
+        const chosen = personalities[personality] || { name: personality, emoji: '🎭', description: 'Personalidade única!' };
         
         const embed = new EmbedBuilder()
             .setTitle('🎭 Personalidade Alterada!')
             .setColor(config.colors.fun)
-            .setDescription(`Agora vou conversar com você no modo **${chosen.name}** ${chosen.emoji}`)
+            .setDescription(`Agora vou conversar com você no modo **${chosen.name}** ${chosen.emoji || ''}`)
             .addFields(
                 { name: 'Descrição', value: chosen.description || 'Personalidade única!' }
             )
             .setFooter({ text: 'Suas conversas agora terão esse estilo!' });
         
         await interaction.reply({ embeds: [embed] });
+    }
+};
+
+/**
+ * Humor command - Show or set current channel mood
+ */
+export const humorCommand = {
+    data: new SlashCommandBuilder()
+        .setName('humor')
+        .setDescription('Mostra ou altera o humor da Frieren neste canal')
+        .addStringOption(option =>
+            option
+                .setName('definir')
+                .setDescription('Escolha um humor para definir no canal (opcional)')
+                .setRequired(false)
+                .addChoices(
+                    { name: '😊 Amigável', value: 'friendly' },
+                    { name: '🧙‍♀️ Sábia', value: 'sage' },
+                    { name: '😤 Brava', value: 'brava' },
+                    { name: '😭 Chorona', value: 'chorona' }
+                )),
+    
+    async execute(interaction) {
+        const channelId = interaction.channelId;
+        const guildId = interaction.guild?.id ?? null;
+        const definir = interaction.options.getString('definir');
+        const personalities = ai.PERSONALITIES || {};
+        
+        if (definir) {
+            await ai.setChannelMood(channelId, definir, guildId);
+            logger.info('CMD', `humor: canal ${channelId} definido para ${definir} por ${interaction.user.username} (guild=${guildId ?? 'null'})`);
+            const moodInfo = personalities[definir] || { name: definir, emoji: '❓', description: '' };
+            const embed = new EmbedBuilder()
+                .setTitle('🎭 Humor alterado')
+                .setColor(config.colors.fun)
+                .setDescription(`O humor deste canal foi definido para **${moodInfo.emoji} ${moodInfo.name}**.\n${moodInfo.description || ''}`)
+                .setFooter({ text: 'Use /humor sem parâmetro para ver o humor atual' })
+                .setTimestamp();
+            await interaction.reply({ embeds: [embed] });
+            return;
+        }
+        
+        const mood = await ai.getChannelMood(channelId);
+        const userOverride = ai.getUserPersonality(interaction.user.id);
+        const moodInfo = personalities[mood] || { name: mood, emoji: '❓', description: 'Humor do canal.' };
+        
+        const description = userOverride
+            ? `**Humor do canal:** ${moodInfo.emoji} ${moodInfo.name}\n**Sua personalidade fixa:** ${(personalities[userOverride] || {}).emoji || '🎭'} ${(personalities[userOverride] || {}).name || userOverride}\n*(Suas mensagens usam sua personalidade escolhida.)*`
+            : `**Humor atual:** ${moodInfo.emoji} ${moodInfo.name}\n${moodInfo.description || ''}`;
+        
+        const embed = new EmbedBuilder()
+            .setTitle('🎭 Humor atual')
+            .setColor(config.colors.fun)
+            .setDescription(description)
+            .setFooter({ text: 'Use /humor definir: para mudar o humor do canal' })
+            .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
     }
 };
 
@@ -220,7 +282,7 @@ export const helpCommand = {
                 },
                 { 
                     name: '🤖 Bot', 
-                    value: '`/personality` `/help` `/ping`',
+                    value: '`/personality` `/humor` `/help` `/ping`',
                     inline: false
                 },
                 { 
@@ -248,6 +310,7 @@ export const pingCommand = {
         const sent = await interaction.reply({ content: '🏓 Pinging...', fetchReply: true });
         const latency = sent.createdTimestamp - interaction.createdTimestamp;
         const apiLatency = Math.round(interaction.client.ws.ping);
+        logger.debug('CMD', `ping: ${latency}ms (API: ${apiLatency}ms)`);
         
         const embed = new EmbedBuilder()
             .setTitle('🏓 Pong!')
@@ -267,6 +330,7 @@ export const customCommands = [
     levelCommand,
     leaderboardCommand,
     personalityCommand,
+    humorCommand,
     statsCommand,
     badgesCommand,
     helpCommand,

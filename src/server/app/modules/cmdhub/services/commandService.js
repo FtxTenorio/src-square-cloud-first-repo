@@ -447,10 +447,16 @@ export async function deleteFromDiscord(applicationId, commandName, guildId = nu
     }
     
     const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
+    logger.info('CMDHUB', `deleteFromDiscord: name=${commandName} guildId=${normalizedGuild ?? 'global'}`);
     try {
         const command = await Command.findOne({ name: commandName.toLowerCase(), guildId: normalizedGuild, ...notDeleted });
         
+        if (!command) {
+            logger.warn('CMDHUB', `deleteFromDiscord: comando não existe no DB: ${commandName} (guildId=${normalizedGuild ?? 'null'})`);
+            throw new Error(`Comando não encontrado no Discord: ${commandName}`);
+        }
         if (!command?.discord?.id) {
+            logger.warn('CMDHUB', `deleteFromDiscord: comando sem discord.id no DB: ${commandName} (nunca deployado?)`);
             throw new Error(`Comando não encontrado no Discord: ${commandName}`);
         }
         

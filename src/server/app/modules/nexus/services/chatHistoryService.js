@@ -40,7 +40,7 @@ export async function saveMessage(message, role = 'user', conversationId = null)
         if (error.code === 11000) {
             return null;
         }
-        console.error('Error saving chat history:', error.message);
+        logger.error('AI', 'Erro ao salvar histórico de chat', error.message);
         throw error;
     }
 }
@@ -69,7 +69,7 @@ export async function saveBotResponse({ guildId, channelId, messageId, content, 
         return historyEntry;
     } catch (error) {
         if (error.code === 11000) return null;
-        console.error('Error saving bot response:', error.message);
+        logger.error('AI', 'Erro ao salvar resposta do bot no histórico', error.message);
         throw error;
     }
 }

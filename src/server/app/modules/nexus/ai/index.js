@@ -12,6 +12,27 @@ import moodEngine from './moodEngine.js';
 // Conversation context storage
 const conversationContext = new Map();
 
+// Per-user personality override (from /personality command). userId -> personalityId
+const userPersonalities = new Map();
+
+/**
+ * Set preferred personality for a user (from /personality command)
+ */
+export function setUserPersonality(userId, personalityId) {
+    if (personalityId) {
+        userPersonalities.set(userId, personalityId);
+    } else {
+        userPersonalities.delete(userId);
+    }
+}
+
+/**
+ * Get user's preferred personality id, or null if not set
+ */
+export function getUserPersonality(userId) {
+    return userPersonalities.get(userId) || null;
+}
+
 /**
  * Get available personalities for commands
  */
@@ -78,7 +99,9 @@ export async function generateResponse(message, history = [], options = {}) {
         };
     }
     
-    const personality = getPersonality(moodResult.mood);
+    // Prefer user's chosen personality (from /personality) over channel mood
+    const userPersonalityId = getUserPersonality(userId);
+    const personality = getPersonality(userPersonalityId || moodResult.mood);
     
     // Update context
     updateContext(userId, channelId, content);
@@ -158,6 +181,8 @@ export default {
     getChannelMood,
     setChannelMood,
     clearContext,
+    setUserPersonality,
+    getUserPersonality,
     PERSONALITIES,
     moodEngine
 };

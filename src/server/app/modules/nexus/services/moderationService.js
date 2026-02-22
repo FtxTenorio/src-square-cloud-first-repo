@@ -3,6 +3,7 @@
  */
 import { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
 import mongoose from 'mongoose';
+import logger from '../utils/logger.js';
 
 // Warning schema for MongoDB
 const warningSchema = new mongoose.Schema({
@@ -40,7 +41,7 @@ async function logModerationAction(data) {
     try {
         await ModLog.create(data);
     } catch (e) {
-        console.error('Failed to log moderation action:', e);
+        logger.error('MOD', 'Falha ao salvar log de moderação', e.message);
     }
 }
 

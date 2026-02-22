@@ -29,24 +29,24 @@ async function commandRoutes(fastify, options) {
     // PUT /commands/:name - Update command
     fastify.put('/commands/:name', commandController.updateCommand);
     
-    // DELETE /commands/:name - Delete command
-    fastify.delete('/commands/:name', commandController.deleteCommand);
-    
     // PATCH /commands/:name/toggle - Toggle command enabled/disabled
     fastify.patch('/commands/:name/toggle', commandController.toggleCommand);
     
     // ═══════════════════════════════════════════════════════════
-    // DISCORD SYNC ROUTES
+    // DISCORD SYNC ROUTES (more specific paths before /commands/:name)
     // ═══════════════════════════════════════════════════════════
+    
+    // DELETE /commands/:name/discord - Delete command from Discord (must be before DELETE /commands/:name)
+    fastify.delete('/commands/:name/discord', commandController.deleteFromDiscord);
+    
+    // DELETE /commands/:name - Delete command (soft delete in DB)
+    fastify.delete('/commands/:name', commandController.deleteCommand);
     
     // POST /commands/sync - Sync commands FROM Discord API
     fastify.post('/commands/sync', commandController.syncFromDiscord);
     
     // POST /commands/deploy - Deploy commands TO Discord API
     fastify.post('/commands/deploy', commandController.deployToDiscord);
-    
-    // DELETE /commands/:name/discord - Delete command from Discord
-    fastify.delete('/commands/:name/discord', commandController.deleteFromDiscord);
     
     // Log registered routes
     logger.info('CMDHUB', '📡 Rotas HTTP registradas:');
