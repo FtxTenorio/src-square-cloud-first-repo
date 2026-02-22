@@ -86,6 +86,7 @@ export async function getRoutineById(id, userId = null) {
 
 /**
  * Update a routine. Se cron ou timezone mudarem e houver scheduleId, recria o schedule no EventBridge.
+ * Rotina desativada (uma vez já executada) ao ser editada volta a ficar ativa e ganha schedule de novo.
  * @param {string} id - Routine ID
  * @param {string} userId - Owner user ID
  * @param {object} updates - { name?, cron?, timezone?, items?, oneTime? }
@@ -96,6 +97,10 @@ export async function updateRoutine(id, userId, updates) {
     const { name, cron, timezone, items, oneTime } = updates;
     const oldCron = routine.cron;
     const oldTz = routine.timezone;
+
+    if (routine.enabled === false) {
+        routine.enabled = true;
+    }
     if (name !== undefined) routine.name = name.trim();
     if (cron !== undefined) routine.cron = cron.trim();
     if (timezone !== undefined) routine.timezone = timezone.trim();
@@ -116,7 +121,7 @@ export async function updateRoutine(id, userId, updates) {
     }
     await routine.save();
 
-    if (mustUpdateSchedule && routine.enabled !== false) {
+    if (routine.enabled && !routine.scheduleId && eventBridge.isConfigured()) {
         try {
             const scheduleName = await eventBridge.createSchedule(routine._id.toString(), routine.cron, routine.timezone);
             if (scheduleName) {
