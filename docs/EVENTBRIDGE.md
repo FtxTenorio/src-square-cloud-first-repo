@@ -22,7 +22,7 @@ A Lambda deve fazer POST para: `{URL_BASE}/events/routine-trigger` com body `{ "
 
 1. Criar função Node 18+ que recebe o evento e faz POST para ROUTINE_TRIGGER_URL.
 2. Na Lambda: env `ROUTINE_TRIGGER_URL` = URL base da sua API.
-3. Código mínimo: `scripts/lambda-routine-trigger.js`.
+3. Código: pasta `lambdas/routine-trigger/` (ver `lambdas/README.md`).
 4. No servidor: `EVENTBRIDGE_LAMBDA_ARN` = ARN da função; `EVENTBRIDGE_SCHEDULER_ROLE_ARN` = role com lambda:InvokeFunction.
 
 ## Testar sem AWS
