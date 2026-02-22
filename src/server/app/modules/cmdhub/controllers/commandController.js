@@ -378,6 +378,35 @@ export async function deleteFromDiscord(request, reply) {
 }
 
 /**
+ * POST /commands/remove-orphan-from-discord
+ * Remove from Discord a command that exists only there (not in Mongo). Body: { name, guildId? }
+ */
+export async function removeOrphanFromDiscord(request, reply) {
+    try {
+        const { name, guildId } = request.body || {};
+        if (!name) {
+            reply.status(400);
+            return { success: false, error: 'Campo "name" é obrigatório' };
+        }
+        const appId = commandService.getApplicationId();
+        if (!appId) {
+            reply.status(400);
+            return { success: false, error: 'Application ID não configurado' };
+        }
+        const result = await commandService.removeOrphanFromDiscord(appId, name, guildId);
+        logger.http.request('POST', '/commands/remove-orphan-from-discord', 200, 0);
+        return { success: true, ...result };
+    } catch (error) {
+        if (error.message.includes('não encontrado')) {
+            reply.status(404);
+        } else {
+            reply.status(500);
+        }
+        return { success: false, error: error.message };
+    }
+}
+
+/**
  * GET /commands/rate-limit
  * Get rate limit status
  */
@@ -408,5 +437,6 @@ export default {
     syncFromDiscord,
     deployToDiscord,
     deleteFromDiscord,
+    removeOrphanFromDiscord,
     getRateLimitStatus
 };

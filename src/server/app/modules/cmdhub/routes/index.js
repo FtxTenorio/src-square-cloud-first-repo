@@ -48,6 +48,9 @@ async function commandRoutes(fastify, options) {
     // POST /commands/deploy - Deploy commands TO Discord API
     fastify.post('/commands/deploy', commandController.deployToDiscord);
     
+    // POST /commands/remove-orphan-from-discord - Remove from Discord a command not in Mongo (body: { name, guildId? })
+    fastify.post('/commands/remove-orphan-from-discord', commandController.removeOrphanFromDiscord);
+    
     // Log registered routes
     logger.info('CMDHUB', '📡 Rotas HTTP registradas:');
     logger.info('CMDHUB', '   GET    /commands');

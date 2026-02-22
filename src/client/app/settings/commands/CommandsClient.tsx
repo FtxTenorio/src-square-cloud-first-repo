@@ -35,6 +35,12 @@ type RateLimit = {
   active: RateLimitEntry[];
 };
 
+type OnlyOnDiscordItem = {
+  id: string;
+  name: string;
+  description: string;
+};
+
 export default function CommandsClient() {
   const base = getApiUrl();
   const [commands, setCommands] = useState<Command[]>([]);
@@ -68,6 +74,7 @@ export default function CommandsClient() {
   const [createGuildId, setCreateGuildId] = useState("");
   const [createEnabled, setCreateEnabled] = useState(true);
   const [createSaving, setCreateSaving] = useState(false);
+  const [onlyOnDiscord, setOnlyOnDiscord] = useState<OnlyOnDiscordItem[]>([]);
 
   const scopeGuildId = scope === "global" ? null : guildId || null;
 
@@ -161,17 +168,40 @@ export default function CommandsClient() {
 
   const handleSync = async () => {
     setSyncing(true);
+    setError(null);
     try {
       const body = scope === "guild" && guildId ? JSON.stringify({ guildId }) : "{}";
       const res = await fetch(`${base}/commands/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Sync failed");
+      setOnlyOnDiscord(json.onlyOnDiscord ?? []);
       await fetchCommands();
       await fetchStats();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const handleRemoveOrphanFromDiscord = async (name: string) => {
+    setActionLoading(`orphan-${name}`);
+    try {
+      const body = JSON.stringify({ name, guildId: scopeGuildId ?? undefined });
+      const res = await fetch(`${base}/commands/remove-orphan-from-discord`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao remover");
+      setOnlyOnDiscord((prev) => prev.filter((c) => c.name !== name));
+      await fetchCommands();
+      await fetchStats();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao remover do Discord");
+    } finally {
+      setActionLoading(null);
     }
   };
 
@@ -591,6 +621,43 @@ export default function CommandsClient() {
           {commands.length === 0 && (
             <p className="px-4 py-8 text-center text-zinc-500">No commands found.</p>
           )}
+        </div>
+      )}
+
+      {onlyOnDiscord.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-medium text-amber-400/90 mb-2">
+            Comandos que existem no Discord mas não aqui (fonte da verdade: Mongo)
+          </h3>
+          <div className="rounded-lg border border-amber-900/50 overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-amber-900/30 text-amber-200/90">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Name</th>
+                  <th className="px-4 py-3 font-medium">Description</th>
+                  <th className="px-4 py-3 font-medium w-40">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-800">
+                {onlyOnDiscord.map((c) => (
+                  <tr key={c.id} className="text-zinc-300">
+                    <td className="px-4 py-3 font-mono text-white">{c.name}</td>
+                    <td className="px-4 py-3 max-w-xs truncate">{c.description}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveOrphanFromDiscord(c.name)}
+                        disabled={actionLoading === `orphan-${c.name}`}
+                        className="rounded bg-amber-900/50 px-2 py-1 text-xs text-amber-200 hover:bg-amber-800/50 disabled:opacity-50"
+                      >
+                        {actionLoading === `orphan-${c.name}` ? "Removendo…" : "Remover do Discord"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

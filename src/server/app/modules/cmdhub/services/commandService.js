@@ -306,40 +306,35 @@ export async function syncFromDiscord(appId = null, guildId = null) {
     try {
         logger.info('CMDHUB', '🔄 Sincronizando comandos do Discord...');
         
-        // Fetch from Discord API
-        const route = guildId 
+        const route = guildId
             ? Routes.applicationGuildCommands(targetAppId, guildId)
             : Routes.applicationCommands(targetAppId);
-            
         const discordCommands = await rest.get(route);
-        
         const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
         const synced = [];
+        const onlyOnDiscord = []; // Existe no Discord mas não no nosso Mongo (ou foi deletado aqui) — fonte da verdade é o Mongo
+
         for (const dc of discordCommands) {
-            let command = await Command.findOne({ name: dc.name, guildId: normalizedGuild, ...notDeleted });
-            
-            if (command) {
+            const command = await Command.findOne({ name: dc.name, guildId: normalizedGuild });
+            if (command && !command.deletedAt) {
                 command.syncFromDiscord(dc);
+                await command.save();
+                synced.push(command.name);
             } else {
-                command = new Command({
+                onlyOnDiscord.push({
+                    id: dc.id,
                     name: dc.name,
-                    description: dc.description,
-                    options: dc.options || [],
-                    guildId: normalizedGuild,
-                    category: 'custom'
+                    description: dc.description || ''
                 });
-                command.syncFromDiscord(dc);
+                logger.info('CMDHUB', `⚠️ No Discord mas não no Mongo (ignorado no sync): ${dc.name}`);
             }
-            
-            await command.save();
-            synced.push(command.name);
         }
-        
+
         await rateLimiter.incrementRateLimit('sync', applicationId);
         await invalidateCache();
-        
-        logger.info('CMDHUB', `✅ ${synced.length} comandos sincronizados`);
-        return { synced, count: synced.length };
+
+        logger.info('CMDHUB', `✅ ${synced.length} sincronizados, ${onlyOnDiscord.length} só no Discord`);
+        return { synced, count: synced.length, onlyOnDiscord };
     } catch (error) {
         logger.error('CMDHUB', 'Erro ao sincronizar do Discord', error.message);
         throw error;
@@ -370,8 +365,34 @@ export async function deployToDiscord(appId = null, guildId = null) {
         
         const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
         const scopeLabel = normalizedGuild ? `guild ${normalizedGuild}` : 'global';
-        
-        // Remover do Discord os desabilitados deste escopo
+        const route = normalizedGuild
+            ? Routes.applicationGuildCommands(targetAppId, normalizedGuild)
+            : Routes.applicationCommands(targetAppId);
+
+        // Mongo é a fonte da verdade: comandos que estão no Discord mas não no Mongo devem ser removidos
+        const ourCommands = await Command.find({ ...notDeleted, enabled: true, guildId: normalizedGuild });
+        const ourNames = new Set(ourCommands.map(c => c.name));
+        let discordCommands = [];
+        try {
+            discordCommands = await rest.get(route);
+        } catch (e) {
+            logger.debug('CMDHUB', 'Nenhum comando no Discord ainda');
+        }
+        for (const dc of discordCommands) {
+            if (!ourNames.has(dc.name)) {
+                try {
+                    const deleteRoute = normalizedGuild
+                        ? Routes.applicationGuildCommand(targetAppId, normalizedGuild, dc.id)
+                        : Routes.applicationCommand(targetAppId, dc.id);
+                    await rest.delete(deleteRoute);
+                    logger.info('CMDHUB', `🗑️ Removido do Discord (não está no Mongo): ${dc.name}`);
+                } catch (err) {
+                    logger.warn('CMDHUB', `Ignorando remoção de ${dc.name} no Discord: ${err.message}`);
+                }
+            }
+        }
+
+        // Remover do Discord os desabilitados deste escopo (existem no Mongo mas enabled=false)
         const disabled = await Command.find({
             ...notDeleted,
             enabled: false,
@@ -394,14 +415,7 @@ export async function deployToDiscord(appId = null, guildId = null) {
             }
         }
         
-        // Só comandos habilitados deste escopo (global = guildId null, guild = guildId igual)
-        const commands = await Command.find({ ...notDeleted, enabled: true, guildId: normalizedGuild });
-        const commandData = commands.map(cmd => cmd.toDiscordAPI());
-        
-        const route = normalizedGuild
-            ? Routes.applicationGuildCommands(targetAppId, normalizedGuild)
-            : Routes.applicationCommands(targetAppId);
-            
+        const commandData = ourCommands.map(cmd => cmd.toDiscordAPI());
         const result = await rest.put(route, { body: commandData });
         
         for (const deployed of result) {
@@ -479,6 +493,31 @@ export async function deleteFromDiscord(applicationId, commandName, guildId = nu
         logger.error('CMDHUB', `Erro ao deletar do Discord: ${commandName}`, error.message);
         throw error;
     }
+}
+
+/**
+ * Remove from Discord a command that exists only on Discord (not in our Mongo).
+ * Used for "orphan" commands shown after sync.
+ */
+export async function removeOrphanFromDiscord(applicationId, commandName, guildId = null) {
+    if (!rest) {
+        throw new Error('Discord REST client não inicializado');
+    }
+    const normalizedGuild = guildId === undefined || guildId === '' ? null : guildId;
+    const route = normalizedGuild
+        ? Routes.applicationGuildCommands(applicationId, normalizedGuild)
+        : Routes.applicationCommands(applicationId);
+    const discordCommands = await rest.get(route);
+    const dc = discordCommands.find(c => c.name === commandName);
+    if (!dc) {
+        throw new Error(`Comando não encontrado no Discord: ${commandName}`);
+    }
+    const deleteRoute = normalizedGuild
+        ? Routes.applicationGuildCommand(applicationId, normalizedGuild, dc.id)
+        : Routes.applicationCommand(applicationId, dc.id);
+    await rest.delete(deleteRoute);
+    logger.info('CMDHUB', `🗑️ Órfão removido do Discord: ${commandName}`);
+    return { deleted: commandName };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -573,6 +612,7 @@ export default {
     syncFromDiscord,
     deployToDiscord,
     deleteFromDiscord,
+    removeOrphanFromDiscord,
     getStats,
     recordUsage
 };
