@@ -1,16 +1,17 @@
 /**
  * events (Life-Sync Engine) - Routine Service
  * Create, list, get, update, delete routines.
- * Phase 1: MongoDB only. Later: AWS EventBridge Scheduler + Redis state.
+ * Integra com EventBridge Scheduler quando configurado (EVENTBRIDGE_LAMBDA_ARN).
  */
 
 import Routine from '../models/Routine.js';
+import * as eventBridge from './eventBridgeScheduler.js';
 import logger from '../../nexus/utils/logger.js';
 
 /**
- * Create a new routine
+ * Create a new routine and, se configurado, cria schedule no EventBridge.
  * @param {object} data - { userId, guildId?, name, cron, timezone, items }
- * @returns {Promise<object>} Saved routine document
+ * @returns {Promise<object>} Saved routine document (com scheduleId se criado)
  */
 export async function createRoutine(data) {
     const { userId, guildId, name, cron, timezone, items = [] } = data;
@@ -26,6 +27,18 @@ export async function createRoutine(data) {
         items: Array.isArray(items) ? items : []
     });
     logger.info('EVENTS', `Rotina criada: ${routine.name} (${routine._id}) por ${userId}`);
+
+    if (eventBridge.isConfigured()) {
+        try {
+            const scheduleName = await eventBridge.createSchedule(routine._id.toString(), routine.cron, routine.timezone);
+            if (scheduleName) {
+                routine.scheduleId = scheduleName;
+                await routine.save();
+            }
+        } catch (err) {
+            logger.warn('EVENTS', `Schedule não criado para ${routine._id}: ${err.message}`);
+        }
+    }
     return routine;
 }
 
@@ -50,11 +63,19 @@ export async function getRoutineById(id, userId = null) {
 }
 
 /**
- * Delete a routine (Phase 1: only Mongo; later: also remove EventBridge schedule)
+ * Delete a routine e o schedule no EventBridge (se existir).
  */
 export async function deleteRoutine(id, userId) {
-    const routine = await Routine.findOneAndDelete({ _id: id, userId });
+    const routine = await Routine.findOne({ _id: id, userId });
     if (!routine) return null;
+    if (routine.scheduleId && eventBridge.isConfigured()) {
+        try {
+            await eventBridge.deleteSchedule(routine.scheduleId);
+        } catch (err) {
+            logger.warn('EVENTS', `Erro ao remover schedule ${routine.scheduleId}: ${err.message}`);
+        }
+    }
+    await Routine.findOneAndDelete({ _id: id, userId });
     logger.info('EVENTS', `Rotina removida: ${routine.name} (${id})`);
     return routine;
 }

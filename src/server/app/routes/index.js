@@ -1,5 +1,6 @@
 import redis from '../../database/redis/index.js';
 import cmdhub from '../modules/cmdhub/index.js';
+import eventsRoutes from '../modules/events/routes/index.js';
 import logger from '../modules/nexus/utils/logger.js';
 
 const CACHE_KEY = 'hello_world_cache';
@@ -51,6 +52,11 @@ async function routes(fastify, options) {
     // CMDHUB - Command Management API
     // ═══════════════════════════════════════════════════════════
     cmdhub.registerRoutes(fastify);
+
+    // ═══════════════════════════════════════════════════════════
+    // EVENTS - Life-Sync (rotina trigger webhook)
+    // ═══════════════════════════════════════════════════════════
+    fastify.register(eventsRoutes);
 }
 
 export default routes;
