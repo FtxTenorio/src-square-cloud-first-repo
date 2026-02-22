@@ -4,7 +4,7 @@
  * Data is stored in the events module (MongoDB); later: AWS EventBridge + Redis.
  */
 
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import * as routineService from '../../events/services/routineService.js';
 import logger from '../utils/logger.js';
 
@@ -168,28 +168,37 @@ export const rotinaListarCommand = {
             const desativadas = routines.filter(r => r.enabled === false);
 
             const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
-            const makeBlock = (r, index, isDesativada) => {
+            const editPath = (id) => `/routines/${id}/edit?userId=${userId}`;
+            const deletePath = (id) => `/routines/${id}/delete?userId=${userId}`;
+            const makeBlock = (r, index, isDesativada, showLinks) => {
                 const { horario, repetir } = cronToHuman(r.cron);
                 const repetirLabel = r.oneTime ? 'Uma vez só' : repetir;
                 const fuso = timezoneToLabel(r.timezone);
                 const itens = (r.items || []).length;
                 const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
-                const deletePath = `/routines/${r._id}/delete?userId=${userId}`;
-                const deleteUrl = baseUrl ? `${baseUrl}${deletePath}` : null;
-                const deleteLine = deleteUrl
-                    ? `└ 🗑️ [Apagar](${deleteUrl})`
-                    : `└ 🗑️ Apagar: \`${deletePath}\` (configure PUBLIC_API_URL para link direto)`;
+                const editUrl = baseUrl ? `${baseUrl}${editPath(r._id)}` : null;
+                const delUrl = baseUrl ? `${baseUrl}${deletePath(r._id)}` : null;
+                const actionsLine = showLinks
+                    ? (baseUrl ? `└ ✏️ [Editar](${editUrl})  ·  🗑️ [Apagar](${delUrl})` : `└ ✏️ \`${editPath(r._id)}\`  ·  🗑️ \`${deletePath(r._id)}\``)
+                    : '';
                 const title = isDesativada ? `**~~${index}. ${r.name}~~**` : `**${index}. ${r.name}**`;
-                return [
+                const lines = [
                     title,
                     `├ 🕐 ${horario}  ·  ${repetirLabel}`,
-                    `├ 🌍 ${fuso}  ·  ${itensStr}`,
-                    deleteLine
-                ].join('\n');
+                    `├ 🌍 ${fuso}  ·  ${itensStr}`
+                ];
+                if (actionsLine) lines.push(actionsLine);
+                return lines.join('\n');
             };
 
-            const activeBlocks = active.map((r, i) => makeBlock(r, i + 1, false));
-            const desativadasBlocks = desativadas.map((r, i) => makeBlock(r, i + 1, true));
+            const maxButtons = 5;
+            const routinesForButtons = active.slice(0, maxButtons);
+            const routinesWithLinksOnly = active.length > maxButtons ? active.slice(maxButtons) : [];
+            const activeBlocks = [
+                ...routinesForButtons.map((r, i) => makeBlock(r, i + 1, false, false)),
+                ...routinesWithLinksOnly.map((r, i) => makeBlock(r, maxButtons + i + 1, false, true))
+            ];
+            const desativadasBlocks = desativadas.map((r, i) => makeBlock(r, i + 1, true, true));
 
             let description = '';
             if (activeBlocks.length > 0) {
@@ -207,7 +216,28 @@ export const rotinaListarCommand = {
                 .setFooter({ text: `${active.length} ativa(s), ${desativadas.length} desativada(s) · Do mais antigo ao mais novo` })
                 .setTimestamp();
 
-            await interaction.editReply({ embeds: [embed] });
+            const components = [];
+            if (baseUrl && routinesForButtons.length > 0) {
+                for (const r of routinesForButtons) {
+                    components.push(
+                        new ActionRowBuilder().addComponents(
+                            new ButtonBuilder()
+                                .setLabel('Editar')
+                                .setStyle(ButtonStyle.Link)
+                                .setURL(`${baseUrl}${editPath(r._id)}`),
+                            new ButtonBuilder()
+                                .setLabel('Apagar')
+                                .setStyle(ButtonStyle.Link)
+                                .setURL(`${baseUrl}${deletePath(r._id)}`)
+                        )
+                    );
+                }
+            }
+
+            await interaction.editReply({
+                embeds: [embed],
+                components: components.length ? components : []
+            });
         } catch (err) {
             logger.error('CMD', 'rotina_listar', err.message);
             await interaction.editReply({

@@ -9,10 +9,12 @@ import logger from '../../nexus/utils/logger.js';
 
 async function commandRoutes(fastify, options) {
     // ═══════════════════════════════════════════════════════════
-    // ROUTINES (Life-Sync) – apagar rotina + schedule EventBridge
+    // ROUTINES (Life-Sync) – apagar, editar, schedule EventBridge
     // ═══════════════════════════════════════════════════════════
     fastify.delete('/routines/:id', routineController.deleteRoutine);
     fastify.get('/routines/:id/delete', routineController.getDeleteRoutine);
+    fastify.get('/routines/:id/edit', routineController.getEditRoutine);
+    fastify.post('/routines/:id/edit', routineController.postEditRoutine);
 
     // ═══════════════════════════════════════════════════════════
     // CRUD ROUTES
@@ -62,6 +64,8 @@ async function commandRoutes(fastify, options) {
     logger.info('CMDHUB', '📡 Rotas HTTP registradas:');
     logger.info('CMDHUB', '   DELETE /routines/:id');
     logger.info('CMDHUB', '   GET    /routines/:id/delete');
+    logger.info('CMDHUB', '   GET    /routines/:id/edit');
+    logger.info('CMDHUB', '   POST   /routines/:id/edit');
     logger.info('CMDHUB', '   GET    /commands');
     logger.info('CMDHUB', '   GET    /commands/stats');
     logger.info('CMDHUB', '   GET    /commands/rate-limit');

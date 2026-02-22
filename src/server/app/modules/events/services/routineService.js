@@ -85,6 +85,66 @@ export async function getRoutineById(id, userId = null) {
 }
 
 /**
+ * Update a routine. Se cron ou timezone mudarem e houver scheduleId, recria o schedule no EventBridge.
+ * @param {string} id - Routine ID
+ * @param {string} userId - Owner user ID
+ * @param {object} updates - { name?, cron?, timezone?, items?, oneTime? }
+ */
+export async function updateRoutine(id, userId, updates) {
+    const routine = await Routine.findOne({ _id: id, userId });
+    if (!routine) return null;
+    const { name, cron, timezone, items, oneTime } = updates;
+    const oldCron = routine.cron;
+    const oldTz = routine.timezone;
+    if (name !== undefined) routine.name = name.trim();
+    if (cron !== undefined) routine.cron = cron.trim();
+    if (timezone !== undefined) routine.timezone = timezone.trim();
+    if (items !== undefined) routine.items = Array.isArray(items) ? items : routine.items;
+    if (oneTime !== undefined) routine.oneTime = Boolean(oneTime);
+
+    const cronChanged = cron !== undefined && routine.cron !== oldCron;
+    const tzChanged = timezone !== undefined && routine.timezone !== oldTz;
+    const mustUpdateSchedule = routine.scheduleId && eventBridge.isConfigured() && (cronChanged || tzChanged);
+
+    if (mustUpdateSchedule) {
+        try {
+            await eventBridge.deleteSchedule(routine.scheduleId);
+            routine.scheduleId = null;
+        } catch (err) {
+            logger.warn('EVENTS', `Erro ao remover schedule ${routine.scheduleId}: ${err.message}`);
+        }
+    }
+    await routine.save();
+
+    if (mustUpdateSchedule && routine.enabled !== false) {
+        try {
+            const scheduleName = await eventBridge.createSchedule(routine._id.toString(), routine.cron, routine.timezone);
+            if (scheduleName) {
+                routine.scheduleId = scheduleName;
+                await routine.save();
+            }
+        } catch (err) {
+            logger.warn('EVENTS', `Schedule não recriado para ${routine._id}: ${err.message}`);
+        }
+    }
+    logger.info('EVENTS', `Rotina atualizada: ${routine.name} (${id})`);
+    return routine;
+}
+
+/**
+ * Retorna o valor "repetir" (para formulário) a partir do cron. oneTime deve ser passado para mapear * → uma_vez.
+ */
+export function cronToRepetirValue(cron, oneTime = false) {
+    if (!cron || typeof cron !== 'string') return 'todo_dia';
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length < 5) return 'todo_dia';
+    const dow = parts[4];
+    if (oneTime) return 'uma_vez';
+    const map = { '*': 'todo_dia', '1-5': 'seg_a_sex', '0,6': 'fim_de_semana', '0': 'domingo', '1': 'segunda', '2': 'terca', '3': 'quarta', '4': 'quinta', '5': 'sexta', '6': 'sabado' };
+    return map[dow] ?? 'todo_dia';
+}
+
+/**
  * Delete a routine e o schedule no EventBridge (se existir).
  */
 export async function deleteRoutine(id, userId) {
@@ -176,9 +236,11 @@ export default {
     createRoutine,
     getRoutinesByUser,
     getRoutineById,
+    updateRoutine,
     deleteRoutine,
     disableRoutine,
     scheduleToCron,
+    cronToRepetirValue,
     getTimezoneFromLocale,
     parseItemsString
 };
