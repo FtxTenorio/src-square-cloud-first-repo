@@ -1,12 +1,19 @@
 /**
  * cmdhub - Routes
- * HTTP routes for command management API
+ * HTTP routes for command management API and routines (Life-Sync)
  */
 
 import commandController from '../controllers/commandController.js';
+import * as routineController from '../controllers/routineController.js';
 import logger from '../../nexus/utils/logger.js';
 
 async function commandRoutes(fastify, options) {
+    // ═══════════════════════════════════════════════════════════
+    // ROUTINES (Life-Sync) – apagar rotina + schedule EventBridge
+    // ═══════════════════════════════════════════════════════════
+    fastify.delete('/routines/:id', routineController.deleteRoutine);
+    fastify.get('/routines/:id/delete', routineController.getDeleteRoutine);
+
     // ═══════════════════════════════════════════════════════════
     // CRUD ROUTES
     // ═══════════════════════════════════════════════════════════
@@ -53,6 +60,8 @@ async function commandRoutes(fastify, options) {
     
     // Log registered routes
     logger.info('CMDHUB', '📡 Rotas HTTP registradas:');
+    logger.info('CMDHUB', '   DELETE /routines/:id');
+    logger.info('CMDHUB', '   GET    /routines/:id/delete');
     logger.info('CMDHUB', '   GET    /commands');
     logger.info('CMDHUB', '   GET    /commands/stats');
     logger.info('CMDHUB', '   GET    /commands/rate-limit');

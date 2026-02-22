@@ -161,16 +161,23 @@ export const rotinaListarCommand = {
                 return;
             }
 
+            const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
             const blocks = routines.map((r, i) => {
                 const { horario, repetir } = cronToHuman(r.cron);
                 const fuso = timezoneToLabel(r.timezone);
                 const itens = (r.items || []).length;
                 const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
+                const deletePath = `/routines/${r._id}/delete?userId=${userId}`;
+                const deleteUrl = baseUrl ? `${baseUrl}${deletePath}` : null;
+                const deleteLine = deleteUrl
+                    ? `└ 🗑️ [Apagar](${deleteUrl})`
+                    : `└ 🗑️ Apagar: \`${deletePath}\` (configure PUBLIC_API_URL para link direto)`;
                 return [
                     `**${i + 1}. ${r.name}**`,
                     `├ 🕐 ${horario}  ·  ${repetir}`,
                     `├ 🌍 ${fuso}  ·  ${itensStr}`,
-                    `└ *ID: \`${r._id}\`*`
+                    `├ *ID: \`${r._id}\`*`,
+                    deleteLine
                 ].join('\n');
             });
 
@@ -178,7 +185,7 @@ export const rotinaListarCommand = {
                 .setTitle('📋 Suas rotinas')
                 .setColor(0x5865F2)
                 .setDescription(blocks.join('\n\n'))
-                .setFooter({ text: `${routines.length} rotina(s) · Use o ID para editar ou remover` })
+                .setFooter({ text: `${routines.length} rotina(s) · Clique em Apagar para remover (e schedule no EventBridge)` })
                 .setTimestamp();
 
             await interaction.editReply({ embeds: [embed] });
