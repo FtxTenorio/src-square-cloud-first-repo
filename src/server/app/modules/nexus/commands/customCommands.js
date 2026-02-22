@@ -337,4 +337,15 @@ export const customCommands = [
     pingCommand
 ];
 
+/**
+ * Opções no formato da API do Discord para o cmdhub deploy.
+ * Ao criar ou alterar um comando com opções (addStringOption, addUserOption, etc.) aqui em cima,
+ * esta exportação garante que o deploy use as mesmas opções — configure os dois ao mesmo tempo.
+ * Fonte única: os SlashCommandBuilder dos comandos acima.
+ */
+export const builtInCommandOptionsForDeploy = {
+    humor: humorCommand.data.toJSON().options ?? [],
+    personality: personalityCommand.data.toJSON().options ?? []
+};
+
 export default customCommands;

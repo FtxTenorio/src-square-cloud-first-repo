@@ -7,7 +7,7 @@ import redis from '../../../../database/redis/index.js';
 import logger from '../../nexus/utils/logger.js';
 
 const RATE_LIMIT_PREFIX = 'cmdhub:ratelimit:';
-const MAX_ATTEMPTS = 5;
+const MAX_ATTEMPTS = 10;
 const WINDOW_TTL = 3600; // 1 hour in seconds
 
 /**
