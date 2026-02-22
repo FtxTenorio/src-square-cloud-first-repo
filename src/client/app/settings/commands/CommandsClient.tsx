@@ -228,10 +228,11 @@ export default function CommandsClient() {
     setActionLoading(name);
     try {
       if (alsoFromDiscord) {
+        const discordBody = scopeGuildId !== undefined && scopeGuildId !== null ? { guildId: scopeGuildId } : {};
         const discordOpts: RequestInit = {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
-          body: scopeGuildId !== undefined && scopeGuildId !== null ? JSON.stringify({ guildId: scopeGuildId }) : undefined,
+          body: JSON.stringify(discordBody),
         };
         const discordRes = await fetch(`${base}/commands/${encodeURIComponent(name)}/discord`, discordOpts);
         const discordJson = await discordRes.json();
@@ -239,8 +240,12 @@ export default function CommandsClient() {
           throw new Error(discordJson.error ?? "Falha ao remover do Discord");
         }
       }
-      const opts: RequestInit = { method: "DELETE", headers: { "Content-Type": "application/json" } };
-      if (scopeGuildId !== undefined && scopeGuildId !== null) opts.body = JSON.stringify({ guildId: scopeGuildId });
+      const deleteBody = scopeGuildId !== undefined && scopeGuildId !== null ? { guildId: scopeGuildId } : {};
+      const opts: RequestInit = {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(deleteBody),
+      };
       const res = await fetch(`${base}/commands/${encodeURIComponent(name)}`, opts);
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Delete failed");
