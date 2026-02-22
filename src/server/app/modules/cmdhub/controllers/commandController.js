@@ -36,7 +36,10 @@ export async function listCommands(request, reply) {
         if (guildId !== undefined) filters.guildId = guildId;
         if (status) filters.status = status;
         
-        const commands = await commandService.getAllCommands(filters);
+        const [commands, deleted] = await Promise.all([
+            commandService.getAllCommands(filters),
+            commandService.getDeletedCommands(filters)
+        ]);
         
         logger.http.request('GET', '/commands', 200, 0);
         
@@ -44,7 +47,8 @@ export async function listCommands(request, reply) {
             success: true,
             source: 'database',
             count: commands.length,
-            data: commands
+            data: commands,
+            deleted
         };
     } catch (error) {
         logger.error('CMDHUB', 'Erro ao listar comandos', error.message);

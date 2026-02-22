@@ -75,6 +75,7 @@ export default function CommandsClient() {
   const [createEnabled, setCreateEnabled] = useState(true);
   const [createSaving, setCreateSaving] = useState(false);
   const [onlyOnDiscord, setOnlyOnDiscord] = useState<OnlyOnDiscordItem[]>([]);
+  const [deletedCommands, setDeletedCommands] = useState<Command[]>([]);
 
   const scopeGuildId = scope === "global" ? null : guildId || null;
 
@@ -94,9 +95,11 @@ export default function CommandsClient() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed to fetch");
       setCommands(json.data ?? []);
+      setDeletedCommands(json.deleted ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load commands");
       setCommands([]);
+      setDeletedCommands([]);
     } finally {
       setLoading(false);
     }
@@ -621,6 +624,40 @@ export default function CommandsClient() {
           {commands.length === 0 && (
             <p className="px-4 py-8 text-center text-zinc-500">No commands found.</p>
           )}
+        </div>
+      )}
+
+      {deletedCommands.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-sm font-medium text-red-400/90 mb-2">
+            Comandos excluídos (soft delete)
+          </h3>
+          <div className="rounded-lg border border-red-900/50 overflow-hidden">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-red-900/30 text-red-200/90">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Name</th>
+                  <th className="px-4 py-3 font-medium">Scope</th>
+                  <th className="px-4 py-3 font-medium">Description</th>
+                  <th className="px-4 py-3 font-medium">Category</th>
+                  <th className="px-4 py-3 font-medium">Status</th>
+                  <th className="px-4 py-3 font-medium">Uses</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-red-900/30">
+                {deletedCommands.map((cmd) => (
+                  <tr key={`${cmd.name}-${cmd.guildId ?? "global"}`} className="text-red-300/90 bg-red-950/20">
+                    <td className="px-4 py-3 font-mono text-red-200">{cmd.name}</td>
+                    <td className="px-4 py-3 text-red-300/80">{cmd.guildId ? `Guild ${cmd.guildId}` : "Global"}</td>
+                    <td className="px-4 py-3 max-w-xs truncate">{cmd.description}</td>
+                    <td className="px-4 py-3">{cmd.category}</td>
+                    <td className="px-4 py-3 text-red-400">Excluído</td>
+                    <td className="px-4 py-3">{cmd.stats?.totalUses ?? 0}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

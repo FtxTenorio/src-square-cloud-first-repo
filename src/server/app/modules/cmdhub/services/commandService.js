@@ -82,6 +82,23 @@ export async function getAllCommands(filters = {}) {
 }
 
 /**
+ * Get soft-deleted commands (same filters as getAllCommands)
+ */
+export async function getDeletedCommands(filters = {}) {
+    try {
+        const query = { deletedAt: { $ne: null } };
+        if (filters.category) query.category = filters.category;
+        if (filters.enabled !== undefined) query.enabled = filters.enabled;
+        if (filters.guildId !== undefined) query.guildId = filters.guildId === 'global' || filters.guildId === '' ? null : filters.guildId;
+        if (filters.status) query['deployment.status'] = filters.status;
+        return await Command.find(query).lean();
+    } catch (error) {
+        logger.error('CMDHUB', 'Erro ao buscar comandos excluídos', error.message);
+        throw error;
+    }
+}
+
+/**
  * Get command by name and scope (guildId = null para global)
  */
 export async function getCommandByName(name, guildId = null) {
@@ -603,6 +620,7 @@ export default {
     getApplicationId,
     getCommandsFromDiscord,
     getAllCommands,
+    getDeletedCommands,
     getCommandByName,
     getCommandById,
     createCommand,
