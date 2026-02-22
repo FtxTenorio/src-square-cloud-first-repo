@@ -93,7 +93,7 @@ const CONDITION_OPTIONS = [
 function buildItemRow(label = '', condition = 'always') {
     const opts = CONDITION_OPTIONS.map(o => `<option value="${escapeHtml(o.value)}"${o.value === condition ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
     return `<div class="item-row" style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;">
-        <input type="text" class="item-label" placeholder="Ex: Verificar e-mail" value="${escapeHtml(label)}" maxlength="200" style="flex: 1; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <input type="text" class="item-label" placeholder="Ex: Tarefa do checklist" value="${escapeHtml(label)}" maxlength="200" autocomplete="off" style="flex: 1; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
         <select class="item-condition" style="width: 100px; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${opts}</select>
         <button type="button" class="btn-remove" title="Remover" style="padding: 0.35rem 0.5rem; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; cursor: pointer;">−</button>
       </div>`;
@@ -132,24 +132,24 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
 <body style="margin:0; background: #f8fafc; font-family: system-ui, -apple-system, sans-serif;">
   <div style="max-width: 480px; margin: 2rem auto; padding: 1.5rem; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: left;">
     <h1 style="font-size: 1.25rem; margin: 0 0 1rem;">✏️ Editar rotina</h1>
-    <form id="form-edit" method="post" action="${escapeHtml(actionUrl)}" style="display: flex; flex-direction: column; gap: 1rem;">
+    <form id="form-edit" method="post" action="${escapeHtml(actionUrl)}" autocomplete="off" style="display: flex; flex-direction: column; gap: 1rem;">
       <input type="hidden" name="userId" value="${escapeHtml(userId)}">
       <input type="hidden" name="itens" id="itens-value" value="">
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Nome</span>
-        <input type="text" name="name" value="${name}" required maxlength="100" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <input type="text" name="name" value="${name}" required maxlength="100" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Horário</span>
-        <input type="time" name="horario" value="${horario}" required style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <input type="time" name="horario" value="${horario}" required autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Repetir</span>
-        <select name="repetir" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${repetirOptions}</select>
+        <select name="repetir" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${repetirOptions}</select>
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Fuso</span>
-        <select name="timezone" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${timezoneOptions}</select>
+        <select name="timezone" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${timezoneOptions}</select>
       </label>
       <div class="itens-wrap" style="margin: 0;">
         <p style="font-weight: 500; margin: 0 0 0.5rem;">Quer adicionar itens à rotina?</p>
@@ -197,7 +197,7 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
     var div = document.createElement('div');
     div.className = 'item-row';
     div.style.cssText = 'display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;';
-    div.innerHTML = '<input type="text" class="item-label" placeholder="Ex: Verificar e-mail" value="' + (label || '').replace(/"/g, '&quot;') + '" maxlength="200" style="flex: 1; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">' +
+    div.innerHTML = '<input type="text" class="item-label" placeholder="Ex: Tarefa do checklist" value="' + (label || '').replace(/"/g, '&quot;') + '" maxlength="200" autocomplete="off" style="flex: 1; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">' +
       '<select class="item-condition" style="width: 100px; padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;"><option value="always"' + (condition === 'always' ? ' selected' : '') + '>Sempre</option></select>' +
       '<button type="button" class="btn-remove" title="Remover" style="padding: 0.35rem 0.5rem; background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; border-radius: 4px; cursor: pointer;">−</button>';
     itensRows.appendChild(div);
