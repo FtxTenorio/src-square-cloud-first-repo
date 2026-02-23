@@ -74,6 +74,7 @@ const REPETIR_OPTIONS = [
     { value: 'todo_dia', label: 'Todo dia' },
     { value: 'seg_a_sex', label: 'Segunda a Sexta' },
     { value: 'fim_de_semana', label: 'Fim de semana (Sáb e Dom)' },
+    { value: 'varios_dias', label: 'Vários dias (ex: segunda, sexta)' },
     { value: 'segunda', label: 'Segunda' }, { value: 'terca', label: 'Terça' }, { value: 'quarta', label: 'Quarta' },
     { value: 'quinta', label: 'Quinta' }, { value: 'sexta', label: 'Sexta' }, { value: 'sabado', label: 'Sábado' }, { value: 'domingo', label: 'Domingo' }
 ];
@@ -110,6 +111,7 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
     const name = escapeHtml(routine.name || '');
     const horario = escapeHtml(formData.horario || '08:00');
     const repetir = formData.repetir || 'todo_dia';
+    const diasValue = escapeHtml((formData.dias || '').trim());
     const timezone = routine.timezone || 'Europe/London';
     const items = Array.isArray(routine.items) ? routine.items : [];
     const hasInitialItems = items.length > 0;
@@ -145,8 +147,14 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Repetir</span>
-        <select name="repetir" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${repetirOptions}</select>
+        <select name="repetir" id="repetir-select" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${repetirOptions}</select>
       </label>
+      <div id="dias-wrap" style="display: ${repetir === 'varios_dias' ? 'block' : 'none'};">
+        <label style="display: flex; flex-direction: column; gap: 0.25rem;">
+          <span style="font-weight: 500;">Quais dias? (separados por vírgula)</span>
+          <input type="text" name="dias" value="${diasValue}" placeholder="segunda, sexta ou segunda, terça, quinta, domingo" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        </label>
+      </div>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
         <span style="font-weight: 500;">Fuso</span>
         <select name="timezone" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${timezoneOptions}</select>
@@ -171,6 +179,13 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
   </div>
   <script>
 (function() {
+  var repetirSelect = document.getElementById('repetir-select');
+  var diasWrap = document.getElementById('dias-wrap');
+  if (repetirSelect && diasWrap) {
+    repetirSelect.addEventListener('change', function() {
+      diasWrap.style.display = this.value === 'varios_dias' ? 'block' : 'none';
+    });
+  }
   var form = document.getElementById('form-edit');
   var itensValue = document.getElementById('itens-value');
   var itensSection = document.getElementById('itens-section');

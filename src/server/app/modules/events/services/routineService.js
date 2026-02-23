@@ -138,6 +138,7 @@ export async function updateRoutine(id, userId, updates) {
 
 /**
  * Retorna o valor "repetir" (para formulário) a partir do cron. oneTime deve ser passado para mapear * → uma_vez.
+ * Se dow tiver vírgula (vários dias), retorna "varios_dias".
  */
 export function cronToRepetirValue(cron, oneTime = false) {
     if (!cron || typeof cron !== 'string') return 'todo_dia';
@@ -145,8 +146,23 @@ export function cronToRepetirValue(cron, oneTime = false) {
     if (parts.length < 5) return 'todo_dia';
     const dow = parts[4];
     if (oneTime) return 'uma_vez';
+    if (dow.includes(',')) return 'varios_dias';
     const map = { '*': 'todo_dia', '1-5': 'seg_a_sex', '0,6': 'fim_de_semana', '0': 'domingo', '1': 'segunda', '2': 'terca', '3': 'quarta', '4': 'quinta', '5': 'sexta', '6': 'sabado' };
     return map[dow] ?? 'todo_dia';
+}
+
+const CRON_NUM_TO_DAY_KEY = { '0': 'domingo', '1': 'segunda', '2': 'terca', '3': 'quarta', '4': 'quinta', '5': 'sexta', '6': 'sabado' };
+
+/**
+ * Retorna string de dias para o formulário de edição quando cron tem vários dias (ex.: "1,5" → "segunda, sexta").
+ */
+export function cronToDiasString(cron) {
+    if (!cron || typeof cron !== 'string') return '';
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length < 5) return '';
+    const dow = parts[4];
+    if (!dow.includes(',')) return '';
+    return dow.split(',').map(n => CRON_NUM_TO_DAY_KEY[n.trim()] || '').filter(Boolean).join(', ');
 }
 
 /**
@@ -167,11 +183,14 @@ export async function deleteRoutine(id, userId) {
     return routine;
 }
 
+const DOW_TO_CRON = { domingo: '0', segunda: '1', terca: '2', quarta: '3', quinta: '4', sexta: '5', sabado: '6' };
+const CRON_TO_DOW_LABEL = { '0': 'Domingo', '1': 'Segunda', '2': 'Terça', '3': 'Quarta', '4': 'Quinta', '5': 'Sexta', '6': 'Sábado' };
+
 /**
  * Convert user-friendly time + recurrence to cron (min hour * * dow).
  * @param {string} horario - "08:00" or "8:30" (HH:mm or H:mm)
- * @param {string} repetir - one of: todo_dia, seg_a_sex, fim_de_semana, domingo..sabado
- * @returns {string} cron expression, e.g. "0 8 * * 1-5"
+ * @param {string} repetir - todo_dia, seg_a_sex, fim_de_semana, uma_vez, um dia, ou vários: "segunda, sexta" / "segunda, terça, quinta, sexta, domingo"
+ * @returns {string} cron expression, e.g. "0 8 * * 1-5" or "0 8 * * 1,5"
  */
 export function scheduleToCron(horario, repetir) {
     const match = (horario || '').trim().match(/^(\d{1,2}):(\d{2})$/);
@@ -193,7 +212,18 @@ export function scheduleToCron(horario, repetir) {
         sexta: '5',
         sabado: '6'
     };
-    const dow = dowMap[repetir] ?? '*';
+
+    let dow;
+    const repetirTrim = (repetir || '').trim();
+    if (repetirTrim.includes(',')) {
+        const days = repetirTrim.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+        const nums = days.map(d => DOW_TO_CRON[d]).filter(Boolean);
+        if (nums.length === 0) throw new Error('Dias inválidos. Use: segunda, terça, quarta, quinta, sexta, sábado, domingo (separados por vírgula).');
+        nums.sort((a, b) => parseInt(a, 10) - parseInt(b, 10));
+        dow = [...new Set(nums)].join(',');
+    } else {
+        dow = dowMap[repetirTrim] ?? '*';
+    }
     return `${min} ${hr} * * ${dow}`;
 }
 
@@ -246,6 +276,7 @@ export default {
     disableRoutine,
     scheduleToCron,
     cronToRepetirValue,
+    cronToDiasString,
     getTimezoneFromLocale,
     parseItemsString
 };

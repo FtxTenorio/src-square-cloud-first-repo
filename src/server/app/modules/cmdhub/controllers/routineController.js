@@ -112,10 +112,11 @@ export async function getEditRoutine(request, reply) {
         }
         const { horario } = cronToHuman(routine.cron);
         const repetir = routineService.cronToRepetirValue(routine.cron, routine.oneTime);
+        const dias = repetir === 'varios_dias' ? routineService.cronToDiasString(routine.cron) : '';
         const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '') || `http://${request.headers.host || 'localhost'}`;
         const actionUrl = `${baseUrl}/routines/${id}/edit`;
         reply.type('text/html').status(200);
-        return viewService.renderRoutineEditForm(routine, { horario, repetir }, actionUrl, userId);
+        return viewService.renderRoutineEditForm(routine, { horario, repetir, dias }, actionUrl, userId);
     } catch (err) {
         logger.error('CMDHUB', 'getEditRoutine', err.message);
         reply.type('text/html').status(500);
@@ -142,8 +143,9 @@ export async function postEditRoutine(request, reply) {
                 message: 'userId é obrigatório.'
             });
         }
-        const { name, horario, repetir, timezone, itens, oneTime } = body;
-        const cron = routineService.scheduleToCron(horario || '08:00', repetir || 'todo_dia');
+        const { name, horario, repetir, timezone, itens, oneTime, dias } = body;
+        const repetirForCron = repetir === 'varios_dias' ? (dias?.trim() || 'segunda, sexta') : (repetir || 'todo_dia');
+        const cron = routineService.scheduleToCron(horario || '08:00', repetirForCron);
         const items = routineService.parseItemsString(itens || '');
         const routine = await routineService.updateRoutine(id, userId, {
             name: name || undefined,

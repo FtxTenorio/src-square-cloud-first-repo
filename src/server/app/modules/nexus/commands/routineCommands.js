@@ -23,6 +23,7 @@ const REPETIR_CHOICES = [
     { name: 'Todo dia', value: 'todo_dia' },
     { name: 'Segunda a Sexta', value: 'seg_a_sex' },
     { name: 'Fim de semana (Sáb e Dom)', value: 'fim_de_semana' },
+    { name: 'Vários dias (ex: segunda, sexta)', value: 'varios_dias' },
     { name: 'Segunda', value: 'segunda' },
     { name: 'Terça', value: 'terca' },
     { name: 'Quarta', value: 'quarta' },
@@ -49,8 +50,17 @@ function cronToHuman(cron) {
         '0': 'Domingo', '1': 'Segunda', '2': 'Terça', '3': 'Quarta',
         '4': 'Quinta', '5': 'Sexta', '6': 'Sábado'
     };
-    const repetir = dowLabels[dow] ?? dow;
+    const repetir = dow.includes(',')
+        ? dow.split(',').map(n => dowLabels[n.trim()] || n).filter(Boolean).join(', ')
+        : (dowLabels[dow] ?? dow);
     return { horario, repetir };
+}
+
+/** "segunda, sexta" → "Segunda, Sexta" */
+function formatDiasLabel(diasStr) {
+    if (!diasStr) return 'Vários dias';
+    const labels = { domingo: 'Domingo', segunda: 'Segunda', terca: 'Terça', quarta: 'Quarta', quinta: 'Quinta', sexta: 'Sexta', sabado: 'Sábado' };
+    return diasStr.split(',').map(s => labels[s.trim().toLowerCase()] || s.trim()).filter(Boolean).join(', ');
 }
 
 /** IANA timezone → nome curto para exibição */
@@ -78,6 +88,10 @@ export const rotinaCriarCommand = {
             .setRequired(true)
             .addChoices(...REPETIR_CHOICES))
         .addStringOption(o => o
+            .setName('dias')
+            .setDescription('Quando "Vários dias": ex. segunda, sexta ou segunda, terça, quinta')
+            .setRequired(false))
+        .addStringOption(o => o
             .setName('timezone')
             .setDescription('Seu fuso (opcional; padrão: do seu Discord)')
             .setRequired(false)
@@ -94,6 +108,7 @@ export const rotinaCriarCommand = {
             const name = interaction.options.getString('nome');
             const horario = interaction.options.getString('horario');
             const repetir = interaction.options.getString('repetir');
+            const diasOpt = interaction.options.getString('dias');
             const timezoneOpt = interaction.options.getString('timezone');
             const locale = interaction.locale || interaction.guildLocale || 'en-GB';
             const savedTimezone = await userPreferenceService.getTimezone(userId);
@@ -101,7 +116,17 @@ export const rotinaCriarCommand = {
             const itensStr = interaction.options.getString('itens');
             const items = routineService.parseItemsString(itensStr || '');
 
-            const cron = routineService.scheduleToCron(horario, repetir);
+            const repetirForCron = repetir === 'varios_dias'
+                ? (diasOpt?.trim() || 'segunda, sexta')
+                : repetir;
+            if (repetir === 'varios_dias' && !diasOpt?.trim()) {
+                await interaction.editReply({
+                    content: 'Quando escolher **Vários dias**, use o campo `dias` (ex: segunda, sexta ou segunda, terça, quinta, sexta).',
+                    ephemeral: true
+                }).catch(() => {});
+                return;
+            }
+            const cron = routineService.scheduleToCron(horario, repetirForCron);
             const oneTime = repetir === 'uma_vez';
 
             const routine = await routineService.createRoutine({
@@ -118,7 +143,9 @@ export const rotinaCriarCommand = {
                 await userPreferenceService.saveTimezone(userId, timezone);
             }
 
-            const repetirLabel = REPETIR_CHOICES.find(c => c.value === repetir)?.name ?? repetir;
+            const repetirLabel = repetir === 'varios_dias'
+                ? formatDiasLabel(diasOpt?.trim() || 'segunda, sexta')
+                : (REPETIR_CHOICES.find(c => c.value === repetir)?.name ?? repetir);
             const embed = new EmbedBuilder()
                 .setTitle('✅ Rotina criada')
                 .setColor(0x57F287)
