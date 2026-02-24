@@ -223,7 +223,6 @@ export const rotinaListarCommand = {
                     r.oneTime ? '└ ⏰ Uma vez só' : null,
                     r.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
                     r.scheduleId ? '└ ⏰ Agendada' : null,
-                    // r.items.length > 0 ? `└ • ${r.items.map(i => `• ${i.label} \`${i.condition}\``).join('\n')}` : null,
                     actionsLine
                 ].join('\n');
             };

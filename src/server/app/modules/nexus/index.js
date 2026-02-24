@@ -222,7 +222,7 @@ function setupCoreEvents(client, options) {
                 message.channel.sendTyping();
                 
                 const history = options.chatHistoryService 
-                    ? await options.chatHistoryService.getContextMessages(message.author.id, message.channel.id, 10)
+                    ? await options.chatHistoryService.getContextMessages(message.guild?.id || null, message.channel.id, 50)
                     : [];
                 
                 const messageData = {
