@@ -88,6 +88,10 @@ export const rotinaCriarCommand = {
             .setRequired(true)
             .addChoices(...REPETIR_CHOICES))
         .addStringOption(o => o
+            .setName('itens')
+            .setDescription('Itens: "Coisa a fazer" ou "Coisa|sempre". Vírgula entre cada.')
+            .setRequired(false))
+        .addStringOption(o => o
             .setName('dias')
             .setDescription('Quando "Vários dias": ex. segunda, sexta ou segunda, terça, quinta')
             .setRequired(false))
@@ -95,11 +99,7 @@ export const rotinaCriarCommand = {
             .setName('timezone')
             .setDescription('Seu fuso (opcional; padrão: do seu Discord)')
             .setRequired(false)
-            .addChoices(...TIMEZONE_CHOICES))
-        .addStringOption(o => o
-            .setName('itens')
-            .setDescription('Itens: "Coisa a fazer" ou "Coisa|sempre". Vírgula entre cada.')
-            .setRequired(false)),
+            .addChoices(...TIMEZONE_CHOICES)),
     async execute(interaction) {
         await interaction.deferReply({ ephemeral: true });
         try {
@@ -154,18 +154,16 @@ export const rotinaCriarCommand = {
                     { name: 'Horário', value: horario, inline: true },
                     { name: 'Repetir', value: repetirLabel, inline: true },
                     { name: 'Fuso', value: routine.timezone, inline: true },
-                    {
+                    routine.items.length > 0 ? {
                         name: 'Itens',
-                        value: routine.items.length
-                            ? routine.items.map(i => `• ${i.label} \`${i.condition}\``).join('\n')
-                            : '*Nenhum item*'
-                    }
-                )
+                        value: routine.items.map(i => `• ${i.label} \`${i.condition}\``).join('\n')
+                    } : null
+                ).filter(Boolean)
                 .setTimestamp();
 
-            let footerText = 'Fase 1: agendamento na nuvem em breve';
+            let footerText = 'Fase 1: agendamento concluído';
             if (timezoneOpt) {
-                footerText = '💡 Seu fuso foi salvo nas preferências. Na próxima rotina não será preciso escolher de novo.';
+                footerText = `💡 Seu fuso "${timezoneToLabel(timezoneOpt)}" foi salvo nas preferências. Na próxima rotina não será preciso escolher de novo.`;
             }
             embed.setFooter({ text: footerText });
 
@@ -222,6 +220,10 @@ export const rotinaListarCommand = {
                     title,
                     `├ 🕐 ${horario}  ·  ${repetirLabel}`,
                     `├ 🌍 ${fuso}  ·  ${itensStr}`,
+                    r.oneTime ? '└ ⏰ Uma vez só' : null,
+                    r.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
+                    r.scheduleId ? '└ ⏰ Agendada' : null,
+                    r.items.length > 0 ? `└ • ${r.items.map(i => `• ${i.label} \`${i.condition}\``).join('\n')}` : null,
                     actionsLine
                 ].join('\n');
             };
