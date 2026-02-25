@@ -154,10 +154,6 @@ export const rotinaCriarCommand = {
                     { name: 'Horário', value: horario, inline: true },
                     { name: 'Repetir', value: repetirLabel, inline: true },
                     { name: 'Fuso', value: routine.timezone, inline: true },
-                    routine.items.length > 0 ? {
-                        name: 'Itens',
-                        value: routine.items.map(i => `• ${i.label} \`${i.condition}\``).join('\n')
-                    } : null
                 ).filter(Boolean)
                 .setTimestamp();
 
