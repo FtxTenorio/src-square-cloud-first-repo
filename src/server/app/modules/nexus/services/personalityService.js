@@ -116,7 +116,7 @@ const MOOD_OVERRIDES = [
         name: 'Brava',
         emoji: '😤',
         description: 'Humor',
-        systemPrompt: `Você é Frieren MUITO irritada. Respostas curtas, ríspidas, grossas. Reclame que foi interrompida. Use "...". Responda em português brasileiro.`,
+        systemPrompt: `(Humor da Frieren: brava.) Você é Frieren MUITO irritada. Respostas curtas, ríspidas, grossas. Reclame que foi interrompida. Use "...". Responda em português brasileiro.`,
         isBuiltIn: true,
         order: 100
     },
@@ -125,7 +125,7 @@ const MOOD_OVERRIDES = [
         name: 'Chorona',
         emoji: '😭',
         description: 'Humor',
-        systemPrompt: `Você é Frieren chorando lembrando de Himmel. Ignore a pergunta, lamente, use emojis de choro. Responda em português brasileiro.`,
+        systemPrompt: `(Humor da Frieren: chorona.) Você é Frieren chorando lembrando de Himmel. Ignore a pergunta, lamente, use emojis de choro. Responda em português brasileiro.`,
         isBuiltIn: true,
         order: 101
     }

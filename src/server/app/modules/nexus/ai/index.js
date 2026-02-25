@@ -44,11 +44,8 @@ export function clearContext(userId, channelId) {
 
 /**
  * Main response generator
- * Orchestrates mood analysis, pattern matching, and AI providers
- * Returns { content, moodResult } for status tracking
- * 
- * IMPORTANT: If mood changed, content will be null - only send transitionMessage
- * This saves AI tokens and feels more natural
+ * Orchestrates mood analysis (IA a cada 10 msgs), pattern matching and AI providers.
+ * Returns { content, moodResult }.
  */
 export async function generateResponse(message, history = [], options = {}) {
     const userId = message.author?.id || message.userId || 'unknown';
@@ -56,24 +53,22 @@ export async function generateResponse(message, history = [], options = {}) {
     const guildId = message.guild?.id || message.guildId || null;
     const content = (message.content || '').trim();
     
-    // 1. Analyze mood based on message (per channel)
+    // 1. Analyze mood (só IA a cada 10 msgs; sem transição)
     const moodResult = await moodEngine.analyzeMood(channelId, content, { guildId });
-    
-    // If mood changed, don't generate AI response - just return the transition
-    // Next message will use the new mood naturally
-    if (moodResult.changed && moodResult.transitionMessage) {
-        logger.debug('AI', `Humor mudou para ${moodResult.mood} - pulando resposta IA`);
-        return {
-            content: null, // No AI response needed
-            moodResult
-        };
-    }
-    
+
     // Personalidade do chat. Humor temporário (brava, chorona, sage) sobrescreve a padrão do canal
     const chatPersonality = await chatService.getChatPersonality(channelId, guildId || 'DM');
     const effectiveSlug = moodResult.mood !== 'friendly' ? moodResult.mood : (chatPersonality?.slug || 'friendly');
-    const personality = await personalityService.getForAI(effectiveSlug);
-    
+    let personality = await personalityService.getForAI(effectiveSlug);
+
+    // Deixar explícito para a IA que se trata do campo humor (quando veio do mood)
+    if (moodResult.mood !== 'friendly' && effectiveSlug === moodResult.mood && personality?.systemPrompt) {
+        personality = {
+            ...personality,
+            systemPrompt: `[Campo humor: ${moodResult.mood}]. O humor atual da Frieren é "${moodResult.mood}". Você deve responder mantendo este humor.\n\n${personality.systemPrompt}`
+        };
+    }
+
     // Update context
     updateContext(userId, channelId, content);
     

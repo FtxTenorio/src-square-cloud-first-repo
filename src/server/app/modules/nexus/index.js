@@ -30,59 +30,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let client = null;
 let isInitialized = false;
 
-// Store status messages per channel (for velha counter)
-const velhaStatusMessages = new Map();
-
-/**
- * Update or create the velha counter status message in a channel
- */
-async function updateVelhaStatus(channel, count) {
-    try {
-        const statusEmojis = ['', '😐', '😠', '😭'];
-        const statusTexts = [
-            '',
-            '`⚠️ Paciência: ██████████░░░░░ (1/3)` 😐',
-            '`⚠️ Paciência: █████░░░░░░░░░░ (2/3)` 😠',
-            '`💔 Paciência: ░░░░░░░░░░░░░░░ (3/3)` 😭'
-        ];
-        
-        const existingMsgId = velhaStatusMessages.get(channel.id);
-        
-        if (count === 0) {
-            // Delete status message if counter reset
-            if (existingMsgId) {
-                try {
-                    const msg = await channel.messages.fetch(existingMsgId);
-                    await msg.delete();
-                } catch (e) { /* message already deleted */ }
-                velhaStatusMessages.delete(channel.id);
-            }
-            return;
-        }
-        
-        const statusText = statusTexts[count] || statusTexts[1];
-        
-        if (existingMsgId) {
-            // Try to edit existing message
-            try {
-                const msg = await channel.messages.fetch(existingMsgId);
-                await msg.edit(statusText);
-                return;
-            } catch (e) {
-                // Message was deleted, create new one
-                velhaStatusMessages.delete(channel.id);
-            }
-        }
-        
-        // Create new status message
-        const newMsg = await channel.send(statusText);
-        velhaStatusMessages.set(channel.id, newMsg.id);
-        
-    } catch (error) {
-        logger.debug('NEXUS', `Erro ao atualizar status velha: ${error.message}`);
-    }
-}
-
 /**
  * Initialize Nexus
  * @param {object} options - Initialization options
@@ -236,36 +183,10 @@ function setupCoreEvents(client, options) {
                 
                 const result = await ai.generateResponse(messageData, history);
                 const responseContent = result.content;
-                const moodResult = result.moodResult;
-                
-                // If mood changed, only send transition message (no AI response)
-                // Next message will use the new mood naturally
-                if (moodResult.changed && moodResult.transitionMessage) {
-                    await message.reply(`_${moodResult.transitionMessage}_`);
-                    
-                    // Update status message with velha counter
-                    if (moodResult.velhaCount > 0) {
-                        await updateVelhaStatus(message.channel, moodResult.velhaCount);
-                    } else {
-                        await updateVelhaStatus(message.channel, 0);
-                    }
-                    
-                    // Don't send AI response - save tokens, next message will use new mood
-                    return;
-                }
-                
-                // Send main response (no mood change)
+
                 const sentMessage = await message.reply(responseContent);
-                
-                // Update status message with velha counter if > 0
-                if (moodResult.velhaCount > 0) {
-                    await updateVelhaStatus(message.channel, moodResult.velhaCount);
-                } else {
-                    // Clear status if counter is 0
-                    await updateVelhaStatus(message.channel, 0);
-                }
-                
-                // Only save the main response to DB
+
+                // Save bot response to DB
                 if (options.chatHistoryService) {
                     await options.chatHistoryService.saveBotResponse({
                         guildId: message.guild?.id,
