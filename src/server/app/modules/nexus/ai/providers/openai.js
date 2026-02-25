@@ -7,7 +7,7 @@ import axios from 'axios';
 import logger from '../../utils/logger.js';
 
 const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
-const DEFAULT_MODEL = 'gpt-3.5-turbo';
+const DEFAULT_MODEL = 'gpt-4o-mini';
 const MAX_TOKENS = 500;
 const TEMPERATURE = 0.8;
 
@@ -18,12 +18,24 @@ export function isConfigured() {
     return !!process.env.OPENAI_API_KEY;
 }
 
+const HISTORY_LIMIT = 50;
+
+/**
+ * Formata conteúdo para a IA enxergar o chat: [Nome]: mensagem
+ */
+function formatMessageContent(h) {
+    const name = h.username;
+    const text = h.content || '';
+    if (name) return `[${name}]: ${text}`.trim();
+    return text;
+}
+
 /**
  * Generate response using OpenAI
  * @param {string} content - User message
  * @param {object} personality - Personality config
- * @param {array} history - Conversation history
- * @param {object} options - Additional options
+ * @param {array} history - Conversation history (até 50 msgs do canal, com role/content/username)
+ * @param {object} options - { currentUsername, model, maxTokens, temperature }
  */
 export async function generateResponse(content, personality, history = [], options = {}) {
     if (!isConfigured()) {
@@ -31,21 +43,27 @@ export async function generateResponse(content, personality, history = [], optio
     }
     
     const startTime = Date.now();
+    const currentUsername = options.currentUsername;
 
-    // Personalidade como primeira mensagem do sistema (estabelece o padrão)
-    const systemContent = personality?.systemPrompt
+    const systemBase = personality?.systemPrompt
         ? `${personality.systemPrompt} Responda em português brasileiro. Seja conciso (máximo 2-3 frases para respostas simples).`
         : 'Você é um assistente amigável. Responda em português brasileiro.';
-    
+    const systemContent = `${systemBase}\n\nContexto: as mensagens abaixo são as últimas do canal (formato [Nome]: mensagem). Use esse contexto para responder de forma coerente ao que está sendo dito no chat.\n\nIMPORTANTE: Na sua resposta, NÃO use o formato [Nome]: ou [Bot]:. Responda apenas com o texto da Frieren, direto, sem prefixos nem citações de outras mensagens.`;
+
+    // Histórico do canal: últimas 50 mensagens (todos os usuários + bot), com [Nome]: mensagem
+    const historyMessages = history.slice(-HISTORY_LIMIT).map(h => ({
+        role: h.role === 'user' ? 'user' : 'assistant',
+        content: formatMessageContent(h)
+    }));
+
+    const currentContent = currentUsername
+        ? `[${currentUsername}]: ${content}`.trim()
+        : content;
+
     const messages = [
         { role: 'system', content: systemContent },
-        // Add conversation history (last 10 messages)
-        ...history.slice(-10).map(h => ({
-            role: h.role === 'user' ? 'user' : 'assistant',
-            content: h.content
-        })),
-        // Current message
-        { role: 'user', content }
+        ...historyMessages,
+        { role: 'user', content: currentContent }
     ];
     
     try {

@@ -86,7 +86,9 @@ export async function generateResponse(message, history = [], options = {}) {
     // 3. Try OpenAI if configured
     if (openai.isConfigured()) {
         try {
-            const result = await openai.generateResponse(content, personality, history);
+            const result = await openai.generateResponse(content, personality, history, {
+                currentUsername: message.author?.username
+            });
             
             return {
                 content: result.content,

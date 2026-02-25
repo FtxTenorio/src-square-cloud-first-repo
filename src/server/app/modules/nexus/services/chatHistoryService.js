@@ -126,11 +126,12 @@ export async function getConversation(conversationId, limit = 50) {
 
 /**
  * Get recent messages for context (for AI/bot memory)
- * Agora baseado em servidor + canal, sem separar por usuário.
+ * Por servidor + canal: todas as mensagens do canal (todos os usuários + bot).
+ * Inclui username para a IA enxergar quem disse o quê no chat.
  * @param {string|null} guildId 
  * @param {string} channelId 
  * @param {number} limit 
- * @returns {Promise<Array<{role: string, content: string}>>}
+ * @returns {Promise<Array<{role: string, content: string, username?: string}>>}
  */
 export async function getContextMessages(guildId, channelId, limit = 50) {
     const filter = {
@@ -138,7 +139,6 @@ export async function getContextMessages(guildId, channelId, limit = 50) {
         isDeleted: false
     };
 
-    // Quando houver servidor, filtra também por guildId.
     if (guildId) {
         filter.guildId = guildId;
     }
@@ -146,13 +146,13 @@ export async function getContextMessages(guildId, channelId, limit = 50) {
     const messages = await ChatHistory.find(filter)
         .sort({ createdAt: -1 })
         .limit(limit)
-        .select('role content createdAt')
+        .select('role content createdAt username')
         .lean();
-    
-    // Retorna em ordem cronológica para contexto
+
     return messages.reverse().map(m => ({
-        role: m.role,
-        content: m.content
+        role: m.role === 'bot' ? 'assistant' : 'user',
+        content: m.content,
+        username: m.username || (m.role === 'bot' ? 'Frieren' : null)
     }));
 }
 
