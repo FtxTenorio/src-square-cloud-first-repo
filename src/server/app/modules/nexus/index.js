@@ -230,7 +230,8 @@ function setupCoreEvents(client, options) {
                     channel: message.channel,
                     content,
                     userId: message.author.id,
-                    channelId: message.channel.id
+                    channelId: message.channel.id,
+                    guildId: message.guild?.id || null
                 };
                 
                 const result = await ai.generateResponse(messageData, history);

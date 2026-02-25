@@ -7,6 +7,7 @@ import mongodb from '../database/mongodb/index.js';
 import cmdhub from './modules/cmdhub/index.js';
 import * as levelService from './modules/nexus/services/levelService.js';
 import * as chatHistoryService from './modules/nexus/services/chatHistoryService.js';
+import * as personalityService from './modules/nexus/services/personalityService.js';
 
 const { logger } = nexus;
 
@@ -68,6 +69,7 @@ const start = async () => {
         logger.info('MONGO', '🍃 Conectando ao MongoDB...');
         await mongodb.connect();
         logger.db.connected('square-cloud');
+        await personalityService.seedPersonalitiesIfNeeded();
         
         // Initialize cmdhub with Discord token for REST API
         cmdhub.init(process.env.DISCORD_SECRET_KEY);

@@ -31,13 +31,14 @@ export async function generateResponse(content, personality, history = [], optio
     }
     
     const startTime = Date.now();
+
+    // Personalidade como primeira mensagem do sistema (estabelece o padrão)
+    const systemContent = personality?.systemPrompt
+        ? `${personality.systemPrompt} Responda em português brasileiro. Seja conciso (máximo 2-3 frases para respostas simples).`
+        : 'Você é um assistente amigável. Responda em português brasileiro.';
     
-    // Build messages array
     const messages = [
-        {
-            role: 'system',
-            content: `${personality.systemPrompt} Responda em português brasileiro. Seja conciso (máximo 2-3 frases para respostas simples).`
-        },
+        { role: 'system', content: systemContent },
         // Add conversation history (last 10 messages)
         ...history.slice(-10).map(h => ({
             role: h.role === 'user' ? 'user' : 'assistant',
@@ -93,11 +94,12 @@ export async function streamResponse(content, personality, history = [], onChunk
         throw new Error('OpenAI API key not configured');
     }
     
+    const systemContent = personality?.systemPrompt
+        ? `${personality.systemPrompt} Responda em português brasileiro.`
+        : 'Você é um assistente amigável. Responda em português brasileiro.';
+    
     const messages = [
-        {
-            role: 'system',
-            content: `${personality.systemPrompt} Responda em português brasileiro.`
-        },
+        { role: 'system', content: systemContent },
         ...history.slice(-10).map(h => ({
             role: h.role === 'user' ? 'user' : 'assistant',
             content: h.content

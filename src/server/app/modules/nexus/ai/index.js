@@ -1,49 +1,18 @@
 /**
  * Nexus AI Engine
  * Main AI module that orchestrates responses
+ * Personalidade é por chat (não por usuário).
  */
 
 import logger from '../utils/logger.js';
-import { getPersonality, getAllPersonalities, PERSONALITIES } from './personalities.js';
 import { matchPattern } from './patterns.js';
 import * as openai from './providers/openai.js';
 import moodEngine from './moodEngine.js';
+import * as chatService from '../services/chatService.js';
+import * as personalityService from '../services/personalityService.js';
 
 // Conversation context storage
 const conversationContext = new Map();
-
-// Per-user personality override (from /personality command). userId -> personalityId
-const userPersonalities = new Map();
-
-/**
- * Set preferred personality for a user (from /personality command)
- */
-export function setUserPersonality(userId, personalityId) {
-    if (personalityId) {
-        userPersonalities.set(userId, personalityId);
-    } else {
-        userPersonalities.delete(userId);
-    }
-}
-
-/**
- * Get user's preferred personality id, or null if not set
- */
-export function getUserPersonality(userId) {
-    return userPersonalities.get(userId) || null;
-}
-
-/**
- * Get available personalities for commands
- */
-export function getAvailablePersonalities() {
-    return getAllPersonalities().map(p => ({
-        id: p.id,
-        name: p.name,
-        emoji: p.emoji,
-        description: p.description
-    }));
-}
 
 /**
  * Track conversation context
@@ -84,10 +53,11 @@ export function clearContext(userId, channelId) {
 export async function generateResponse(message, history = [], options = {}) {
     const userId = message.author?.id || message.userId || 'unknown';
     const channelId = message.channel?.id || message.channelId || 'unknown';
+    const guildId = message.guild?.id || message.guildId || null;
     const content = (message.content || '').trim();
     
     // 1. Analyze mood based on message (per channel)
-    const moodResult = await moodEngine.analyzeMood(channelId, content);
+    const moodResult = await moodEngine.analyzeMood(channelId, content, { guildId });
     
     // If mood changed, don't generate AI response - just return the transition
     // Next message will use the new mood naturally
@@ -99,9 +69,10 @@ export async function generateResponse(message, history = [], options = {}) {
         };
     }
     
-    // Prefer user's chosen personality (from /personality) over channel mood
-    const userPersonalityId = getUserPersonality(userId);
-    const personality = getPersonality(userPersonalityId || moodResult.mood);
+    // Personalidade do chat. Humor temporário (brava, chorona, sage) sobrescreve a padrão do canal
+    const chatPersonality = await chatService.getChatPersonality(channelId, guildId || 'DM');
+    const effectiveSlug = moodResult.mood !== 'friendly' ? moodResult.mood : (chatPersonality?.slug || 'friendly');
+    const personality = await personalityService.getForAI(effectiveSlug);
     
     // Update context
     updateContext(userId, channelId, content);
@@ -174,15 +145,42 @@ function getSleepingMessage() {
     return sleepingMessages[Math.floor(Math.random() * sleepingMessages.length)];
 }
 
+/**
+ * Lista personalidades disponíveis (para comandos)
+ */
+export async function getAvailablePersonalities() {
+    const list = await personalityService.listAll();
+    return list.map(p => ({
+        id: p.slug,
+        slug: p.slug,
+        name: p.name,
+        emoji: p.emoji,
+        description: p.description
+    }));
+}
+
+/**
+ * Define a personalidade do chat (por canal)
+ */
+export async function setChatPersonality(channelId, personalityId, guildId = null) {
+    return chatService.setPersonality(channelId, personalityId, guildId || 'DM');
+}
+
+/**
+ * Obtém a personalidade atual do chat
+ */
+export async function getChatPersonality(channelId, guildId = null) {
+    return chatService.getChatPersonality(channelId, guildId || 'DM');
+}
+
 // Export everything
 export default {
     generateResponse,
     getAvailablePersonalities,
     getChannelMood,
     setChannelMood,
+    setChatPersonality,
+    getChatPersonality,
     clearContext,
-    setUserPersonality,
-    getUserPersonality,
-    PERSONALITIES,
     moodEngine
 };
