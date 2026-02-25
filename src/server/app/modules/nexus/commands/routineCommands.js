@@ -153,8 +153,8 @@ export const rotinaCriarCommand = {
                     { name: 'Nome', value: routine.name, inline: true },
                     { name: 'Horário', value: horario, inline: true },
                     { name: 'Repetir', value: repetirLabel, inline: true },
-                    { name: 'Fuso', value: routine.timezone, inline: true },
-                ).filter(Boolean)
+                    { name: 'Fuso', value: routine.timezone, inline: true }
+                )
                 .setTimestamp();
 
             let footerText = 'Fase 1: agendamento concluído';
