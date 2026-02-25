@@ -115,8 +115,9 @@ function setupCoreEvents(client, options) {
         // Debug log
         logger.debug('MSG', `Mensagem de ${message.author.tag}: ${message.content.substring(0, 50)}`);
         
-        if (message.author.bot) return;
-        
+        // Ignorar bots (incluindo a própria Frieren) e mensagens de sistema
+        if (message.author.bot || message.system) return;
+
         try {
             // XP handling (if levelService is provided)
             if (options.levelService) {
@@ -150,15 +151,10 @@ function setupCoreEvents(client, options) {
                 }
             }
             
-            // Chat history (if service provided)
-            if (options.chatHistoryService) {
-                await options.chatHistoryService.saveMessage(message, 'user');
-            }
-            
             // AI response (mentions or DMs)
             const isMentioned = message.mentions.has(client.user);
             const isDM = !message.guild;
-            
+
             if (isMentioned || isDM) {
                 const content = message.content
                     .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
@@ -167,11 +163,17 @@ function setupCoreEvents(client, options) {
                 if (!content) return;
                 
                 message.channel.sendTyping();
-                
-                const history = options.chatHistoryService 
+
+                // Histórico do canal ANTES de salvar esta mensagem (para não duplicar a atual no contexto)
+                const history = options.chatHistoryService
                     ? await options.chatHistoryService.getContextMessages(message.guild?.id || null, message.channel.id, 50)
                     : [];
-                
+
+                // Salvar mensagem de quem mencionou (todas são salvas para contexto do canal)
+                if (options.chatHistoryService) {
+                    await options.chatHistoryService.saveMessage(message, 'user');
+                }
+
                 const messageData = {
                     author: message.author,
                     channel: message.channel,
@@ -195,6 +197,11 @@ function setupCoreEvents(client, options) {
                         content: responseContent,
                         replyToMessageId: message.id
                     });
+                }
+            } else {
+                // Salvar todas as mensagens do canal (sem menção) para a Frieren ver o chat
+                if (options.chatHistoryService) {
+                    await options.chatHistoryService.saveMessage(message, 'user');
                 }
             }
         } catch (error) {
