@@ -180,6 +180,38 @@ export async function updateCommand(request, reply) {
 }
 
 /**
+ * POST /commands/:name/restore
+ * Restore soft-deleted command; if not on Discord, deploys to Discord
+ */
+export async function restoreCommand(request, reply) {
+    try {
+        const { name } = request.params;
+        const guildId = request.body?.guildId ?? request.query.guildId;
+        logger.info('CMDHUB', `POST /commands/${name}/restore guildId=${guildId ?? 'null'}`);
+        const result = await commandService.restoreCommand(name, guildId);
+        logger.http.request('POST', `/commands/${name}/restore`, 200, 0);
+        return {
+            success: true,
+            message: result.deployedToDiscord
+                ? `Comando ${name} restaurado e recriado no Discord.`
+                : result.deployError
+                    ? `Comando ${name} restaurado no banco; Discord: ${result.deployError}`
+                    : `Comando ${name} restaurado.`,
+            data: result.command,
+            deployedToDiscord: result.deployedToDiscord,
+            deployError: result.deployError || null
+        };
+    } catch (error) {
+        if (error.message.includes('não encontrado')) {
+            reply.status(404);
+        } else {
+            reply.status(500);
+        }
+        return { success: false, error: error.message };
+    }
+}
+
+/**
  * DELETE /commands/:name
  * Delete command
  */
@@ -436,6 +468,7 @@ export default {
     createCommand,
     updateCommand,
     deleteCommand,
+    restoreCommand,
     toggleCommand,
     getStats,
     syncFromDiscord,

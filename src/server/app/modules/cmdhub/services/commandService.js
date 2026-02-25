@@ -232,6 +232,37 @@ export async function deleteCommand(name, guildId = null) {
 }
 
 /**
+ * Restore soft-deleted command. If it was also removed from Discord (discord.id null), redeploys to Discord.
+ */
+export async function restoreCommand(name, guildId = null) {
+    const normalizedGuild = guildId === undefined || guildId === '' || guildId === 'global' ? null : guildId;
+    const command = await Command.findOne({
+        name: name.toLowerCase(),
+        guildId: normalizedGuild,
+        deletedAt: { $ne: null }
+    });
+    if (!command) {
+        throw new Error(`Comando excluído não encontrado: ${name}`);
+    }
+    command.deletedAt = null;
+    command.deployment.status = 'pending';
+    await command.save();
+    await invalidateCache();
+    logger.info('CMDHUB', `♻️ Comando restaurado: ${name}`);
+    const needsDiscord = !command.discord?.id;
+    if (needsDiscord && rest && applicationId) {
+        try {
+            await deployToDiscord(null, normalizedGuild);
+            return { command, deployedToDiscord: true };
+        } catch (err) {
+            logger.warn('CMDHUB', `Restore: comando ${name} restaurado no DB; deploy Discord falhou: ${err.message}`);
+            return { command, deployedToDiscord: false, deployError: err.message };
+        }
+    }
+    return { command, deployedToDiscord: false };
+}
+
+/**
  * Toggle command enabled/disabled
  */
 export async function toggleCommand(name, enabled, guildId = null) {
@@ -640,6 +671,7 @@ export default {
     createCommand,
     updateCommand,
     deleteCommand,
+    restoreCommand,
     toggleCommand,
     syncFromDiscord,
     deployToDiscord,

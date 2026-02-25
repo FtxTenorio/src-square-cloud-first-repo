@@ -5,7 +5,6 @@
 import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import levelService from '../services/levelService.js';
 import ai from '../ai/index.js';
-import { getPersonalityChoices } from '../ai/personalities.js';
 import config from '../core/config.js';
 import logger from '../utils/logger.js';
 
@@ -73,48 +72,48 @@ export const leaderboardCommand = {
 };
 
 /**
- * Personality command - Change bot personality
+ * Personality command - Muda a personalidade do bot neste canal (por chat)
  */
 export const personalityCommand = {
     data: new SlashCommandBuilder()
         .setName('personality')
-        .setDescription('Muda a personalidade do bot para você')
+        .setDescription('Muda a personalidade do bot neste canal')
         .addStringOption(option => {
             const opt = option
                 .setName('tipo')
-                .setDescription('Escolha uma personalidade')
+                .setDescription('Escolha uma personalidade para este canal')
                 .setRequired(true);
             
-            // Add choices from available personalities
             opt.addChoices(
                 { name: '😊 Amigável', value: 'friendly' },
                 { name: '💼 Profissional', value: 'professional' },
-                { name: '🤣 Engraçado', value: 'funny' },
-                { name: '🧙‍♂️ Sábio', value: 'sage' },
-                { name: '🏴‍☠️ Pirata', value: 'pirate' },
-                { name: '🧝‍♀️ Frieren', value: 'frieren' }
+                { name: '🧙‍♀️ Sábia', value: 'sage' },
+                { name: '🤣 Divertido', value: 'divertido' },
+                { name: '🔍 Analista', value: 'analista' }
             );
-            
             return opt;
         }),
     
     async execute(interaction) {
-        const personality = interaction.options.getString('tipo');
+        const personalityId = interaction.options.getString('tipo');
+        const channelId = interaction.channelId;
+        const guildId = interaction.guild?.id ?? 'DM';
         const guildName = interaction.guild?.name ?? 'DM';
-        logger.info('CMD', `personality: ${interaction.user.username} definiu ${personality} (${guildName})`);
         
-        ai.setUserPersonality(interaction.user.id, personality);
-        const personalities = ai.PERSONALITIES || {};
-        const chosen = personalities[personality] || { name: personality, emoji: '🎭', description: 'Personalidade única!' };
+        logger.info('CMD', `personality: canal ${channelId} → ${personalityId} por ${interaction.user.username} (${guildName})`);
+        
+        await ai.setChatPersonality(channelId, personalityId, guildId);
+        const chosen = await ai.getChatPersonality(channelId, guildId);
+        const display = chosen || { name: personalityId, emoji: '🎭', description: '' };
         
         const embed = new EmbedBuilder()
-            .setTitle('🎭 Personalidade Alterada!')
+            .setTitle('🎭 Personalidade do canal alterada!')
             .setColor(config.colors.fun)
-            .setDescription(`Agora vou conversar com você no modo **${chosen.name}** ${chosen.emoji || ''}`)
+            .setDescription(`Este canal agora usa **${display.name}** ${display.emoji || ''}`)
             .addFields(
-                { name: 'Descrição', value: chosen.description || 'Personalidade única!' }
+                { name: 'Descrição', value: display.description || 'Personalidade única!' }
             )
-            .setFooter({ text: 'Suas conversas agora terão esse estilo!' });
+            .setFooter({ text: 'O humor temporário (ex: brava após "velha" 3x) pode sobrescrever momentaneamente.' });
         
         await interaction.reply({ embeds: [embed] });
     }
@@ -143,16 +142,16 @@ export const humorCommand = {
         const channelId = interaction.channelId;
         const guildId = interaction.guild?.id ?? null;
         const definir = interaction.options.getString('definir');
-        const personalities = ai.PERSONALITIES || {};
         
         if (definir) {
             await ai.setChannelMood(channelId, definir, guildId);
             logger.info('CMD', `humor: canal ${channelId} definido para ${definir} por ${interaction.user.username} (guild=${guildId ?? 'null'})`);
-            const moodInfo = personalities[definir] || { name: definir, emoji: '❓', description: '' };
+            const moodLabels = { friendly: '😊 Amigável', sage: '🧙‍♀️ Sábia', brava: '😤 Brava', chorona: '😭 Chorona' };
+            const moodInfo = moodLabels[definir] || definir;
             const embed = new EmbedBuilder()
                 .setTitle('🎭 Humor alterado')
                 .setColor(config.colors.fun)
-                .setDescription(`O humor deste canal foi definido para **${moodInfo.emoji} ${moodInfo.name}**.\n${moodInfo.description || ''}`)
+                .setDescription(`O humor deste canal foi definido para **${moodInfo}**.`)
                 .setFooter({ text: 'Use /humor sem parâmetro para ver o humor atual' })
                 .setTimestamp();
             await interaction.reply({ embeds: [embed] });
@@ -160,18 +159,23 @@ export const humorCommand = {
         }
         
         const mood = await ai.getChannelMood(channelId);
-        const userOverride = ai.getUserPersonality(interaction.user.id);
-        const moodInfo = personalities[mood] || { name: mood, emoji: '❓', description: 'Humor do canal.' };
+        const chatPersonality = await ai.getChatPersonality(channelId, guildId || 'DM');
+        const moodLabels = { friendly: '😊 Amigável', sage: '🧙‍♀️ Sábia', brava: '😤 Brava', chorona: '😭 Chorona' };
+        const moodLabel = moodLabels[mood] || mood;
+        const personalityLabel = chatPersonality ? `${chatPersonality.emoji || ''} ${chatPersonality.name}` : '—';
         
-        const description = userOverride
-            ? `**Humor do canal:** ${moodInfo.emoji} ${moodInfo.name}\n**Sua personalidade fixa:** ${(personalities[userOverride] || {}).emoji || '🎭'} ${(personalities[userOverride] || {}).name || userOverride}\n*(Suas mensagens usam sua personalidade escolhida.)*`
-            : `**Humor atual:** ${moodInfo.emoji} ${moodInfo.name}\n${moodInfo.description || ''}`;
+        const description = [
+            `**Humor atual:** ${moodLabel}`,
+            `**Personalidade do canal:** ${personalityLabel}`,
+            '',
+            '_O humor é temporário (ex: brava após "velha" 3x). A personalidade é o padrão do canal._'
+        ].join('\n');
         
         const embed = new EmbedBuilder()
-            .setTitle('🎭 Humor atual')
+            .setTitle('🎭 Humor e personalidade')
             .setColor(config.colors.fun)
             .setDescription(description)
-            .setFooter({ text: 'Use /humor definir: para mudar o humor do canal' })
+            .setFooter({ text: 'Use /humor definir: para mudar o humor · /personality para mudar a personalidade' })
             .setTimestamp();
         
         await interaction.reply({ embeds: [embed], ephemeral: true });

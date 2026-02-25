@@ -13,6 +13,7 @@ type Command = {
   guildId?: string | null;
   deployment?: { status: string; lastDeployed?: string };
   stats?: { totalUses?: number };
+  discord?: { id?: string | null };
 };
 
 type Stats = {
@@ -76,6 +77,7 @@ export default function CommandsClient() {
   const [createSaving, setCreateSaving] = useState(false);
   const [onlyOnDiscord, setOnlyOnDiscord] = useState<OnlyOnDiscordItem[]>([]);
   const [deletedCommands, setDeletedCommands] = useState<Command[]>([]);
+  const [restoreConfirm, setRestoreConfirm] = useState<Command | null>(null);
 
   const scopeGuildId = scope === "global" ? null : guildId || null;
 
@@ -206,6 +208,31 @@ export default function CommandsClient() {
     } finally {
       setActionLoading(null);
     }
+  };
+
+  const handleRestoreCommand = async (name: string, cmdGuildId?: string | null) => {
+    const key = `restore-${name}-${cmdGuildId ?? "global"}`;
+    setActionLoading(key);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (cmdGuildId !== undefined && cmdGuildId !== null && cmdGuildId !== "") params.set("guildId", cmdGuildId);
+      const res = await fetch(`${base}/commands/${encodeURIComponent(name)}/restore?${params}`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao recriar");
+      setRestoreConfirm(null);
+      await fetchCommands();
+      await fetchStats();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Falha ao recriar comando");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const executeRestore = async () => {
+    if (!restoreConfirm) return;
+    await handleRestoreCommand(restoreConfirm.name, restoreConfirm.guildId ?? undefined);
   };
 
   const handleDeploy = async () => {
@@ -642,6 +669,7 @@ export default function CommandsClient() {
                   <th className="px-4 py-3 font-medium">Category</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium">Uses</th>
+                  <th className="px-4 py-3 font-medium w-32">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-red-900/30">
@@ -653,6 +681,16 @@ export default function CommandsClient() {
                     <td className="px-4 py-3">{cmd.category}</td>
                     <td className="px-4 py-3 text-red-400">Excluído</td>
                     <td className="px-4 py-3">{cmd.stats?.totalUses ?? 0}</td>
+                    <td className="px-4 py-3">
+                      <button
+                        type="button"
+                        onClick={() => setRestoreConfirm(cmd)}
+                        disabled={actionLoading === `restore-${cmd.name}-${cmd.guildId ?? "global"}`}
+                        className="rounded bg-emerald-900/50 px-2 py-1 text-xs text-emerald-200 hover:bg-emerald-800/50 disabled:opacity-50"
+                      >
+                        {actionLoading === `restore-${cmd.name}-${cmd.guildId ?? "global"}` ? "Recriando…" : "Recriar"}
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -798,6 +836,51 @@ export default function CommandsClient() {
                 </div>
               </>
             ) : null}
+          </div>
+        </div>
+      )}
+
+      {restoreConfirm && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => !actionLoading && setRestoreConfirm(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="restore-dialog-title"
+        >
+          <div
+            className="rounded-xl border border-zinc-700 bg-zinc-900 shadow-xl max-w-md w-full p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="restore-dialog-title" className="text-lg font-semibold text-white mb-2">
+              Recriar comando
+            </h2>
+            <p className="text-zinc-400 text-sm mb-4">
+              O comando <span className="font-mono text-zinc-200">{restoreConfirm.name}</span> será restaurado e voltará a aparecer na lista.
+            </p>
+            {!restoreConfirm.discord?.id && (
+              <p className="text-amber-400/90 text-sm mb-5 rounded-md bg-amber-950/40 border border-amber-800/50 px-3 py-2">
+                Será recriado também no Discord (o slash command voltará a aparecer para os usuários).
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => !actionLoading && setRestoreConfirm(null)}
+                disabled={!!actionLoading}
+                className="rounded-md border border-zinc-600 px-4 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={executeRestore}
+                disabled={!!actionLoading}
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-500 disabled:opacity-50"
+              >
+                {actionLoading ? "Recriando…" : "Recriar"}
+              </button>
+            </div>
           </div>
         </div>
       )}

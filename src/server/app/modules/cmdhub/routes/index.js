@@ -48,6 +48,9 @@ async function commandRoutes(fastify, options) {
     // DELETE /commands/:name/discord - Delete command from Discord (must be before DELETE /commands/:name)
     fastify.delete('/commands/:name/discord', commandController.deleteFromDiscord);
     
+    // POST /commands/:name/restore - Restore soft-deleted command (and deploy to Discord if needed)
+    fastify.post('/commands/:name/restore', commandController.restoreCommand);
+    
     // DELETE /commands/:name - Delete command (soft delete in DB)
     fastify.delete('/commands/:name', commandController.deleteCommand);
     
@@ -72,6 +75,7 @@ async function commandRoutes(fastify, options) {
     logger.info('CMDHUB', '   GET    /commands/:name');
     logger.info('CMDHUB', '   POST   /commands');
     logger.info('CMDHUB', '   PUT    /commands/:name');
+    logger.info('CMDHUB', '   POST   /commands/:name/restore');
     logger.info('CMDHUB', '   DELETE /commands/:name');
     logger.info('CMDHUB', '   PATCH  /commands/:name/toggle');
     logger.info('CMDHUB', '   POST   /commands/sync');
