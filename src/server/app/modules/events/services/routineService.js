@@ -49,7 +49,7 @@ export async function createRoutine(data) {
 
 /**
  * List routines visíveis para um usuário (dono ou participante) e opcionalmente por guild.
- * Ordenado do mais antigo ao mais novo.
+ * Ordenado do mais novo ao mais antigo.
  * @param {string} userId - Discord user ID
  * @param {string} [guildId] - Optional guild filter
  */
@@ -62,7 +62,7 @@ export async function getRoutinesByUser(userId, guildId = null) {
     };
     if (guildId != null) query.guildId = guildId;
     logger.debug?.('EVENTS', `getRoutinesByUser query`, { userId, guildId, query });
-    const routines = await Routine.find(query).sort({ createdAt: 1 }).lean();
+    const routines = await Routine.find(query).sort({ createdAt: -1 }).lean();
     logger.info('EVENTS', `getRoutinesByUser → ${routines.length} rotina(s) para user=${userId} guild=${guildId ?? 'any'}`);
     return routines;
 }
