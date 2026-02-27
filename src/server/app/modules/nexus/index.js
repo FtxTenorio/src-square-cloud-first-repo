@@ -137,7 +137,9 @@ async function respondWithFrieren(message, content, options) {
         : undefined;
 
     const result = await ai.generateResponse(messageData, history, { discordMessage: message, saveToolInfo });
-    const responseContent = result.content;
+    // Sanitizar respostas que vêm com prefixos tipo [Bot]:
+    let responseContent = result.content || '';
+    responseContent = responseContent.replace(/^\s*\[bot\]\s*:/i, '').trim();
 
     const sentMessage = await message.reply(responseContent);
 
