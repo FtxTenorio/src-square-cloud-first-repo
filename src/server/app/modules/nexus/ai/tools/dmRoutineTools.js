@@ -188,7 +188,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
 
                 const payload = {
                     userId,
-                    guildId: null,
+                    guildId: context?.message?.guild?.id ?? null,
                     name: String(nameArg),
                     cron: String(cron),
                     timezone: String(timezone),

@@ -122,12 +122,24 @@ export async function generateResponse(message, history = [], options = {}) {
                 temperature: aiConfig.temperature
             };
 
-            // DM: habilitar funções (tools) para a IA ler e editar rotinas do usuário
+            // Tools:
+            // - DM: pode usar todas as tools de rotina em DM.
+            // - Servidor: apenas create_routine e get_routine (para este guild).
+            let tools = [];
             if (isDM) {
+                tools = DM_ROUTINE_TOOLS;
+            } else {
+                const allowed = new Set(['create_routine', 'get_routine']);
+                tools = DM_ROUTINE_TOOLS.filter(
+                    (t) => allowed.has(t.function?.name)
+                );
+            }
+
+            if (tools.length > 0) {
                 const result = await openai.generateResponseWithTools(content, personality, history, {
                     ...baseOptions,
                     userId,
-                    tools: DM_ROUTINE_TOOLS,
+                    tools,
                     executeTool: executeDmRoutineTool,
                     messageContext: { message: options.discordMessage, saveToolInfo: options.saveToolInfo }
                 });
