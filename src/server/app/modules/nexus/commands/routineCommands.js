@@ -4,7 +4,7 @@
  * Data is stored in the events module (MongoDB); later: AWS EventBridge + Redis.
  */
 
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
 import * as routineService from '../../events/services/routineService.js';
 import * as userPreferenceService from '../../events/services/userPreferenceService.js';
 import logger from '../utils/logger.js';
@@ -200,10 +200,13 @@ export const rotinaCriarCommand = {
     }
 };
 
+const PAGE_SIZE = 5;
+const LIST_COLLECTOR_TIME_MS = 5 * 60 * 1000; // 5 min
+
 export const rotinaListarCommand = {
     data: new SlashCommandBuilder()
         .setName('rotina_listar')
-        .setDescription('Lista suas rotinas')
+        .setDescription('Lista suas rotinas (menu com botões e detalhes)')
         .addStringOption(o => o
             .setName('servidor')
             .setDescription('Filtrar por este servidor apenas (deixe vazio para todas)')
@@ -215,11 +218,6 @@ export const rotinaListarCommand = {
             const guildId = interaction.options.getString('servidor') || null;
             logger.info('CMD', `rotina_listar invoked by ${userId} (guild filter: ${guildId ?? 'all'})`);
             const routines = await routineService.getRoutinesByUser(userId, guildId);
-            logger.debug?.('CMD', 'rotina_listar routines raw', {
-                count: routines.length,
-                ids: routines.map(r => r._id?.toString?.() || String(r._id || '')),
-                owners: [...new Set(routines.map(r => r.userId))]
-            });
 
             if (routines.length === 0) {
                 await interaction.editReply({
@@ -228,12 +226,10 @@ export const rotinaListarCommand = {
                 return;
             }
 
-            const active = routines.filter(r => r.enabled !== false);
-            const desativadas = routines.filter(r => r.enabled === false);
-
             const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
             const editPath = (id) => `/routines/${id}/edit?userId=${userId}`;
             const deletePath = (id) => `/routines/${id}/delete?userId=${userId}`;
+
             const makeBlock = (r, index, isDesativada) => {
                 const { horario, repetir } = cronToHuman(r.cron);
                 const repetirLabel = r.oneTime ? 'Uma vez só' : repetir;
@@ -245,7 +241,6 @@ export const rotinaListarCommand = {
                 const roleLine = isOwner
                     ? '├ 👤 Dono: você'
                     : (isParticipant ? '├ 👥 Você foi incluído nesta rotina por outro usuário' : null);
-
                 let actionsLine = null;
                 if (baseUrl) {
                     if (isOwner) {
@@ -262,7 +257,6 @@ export const rotinaListarCommand = {
                         actionsLine = `└ 🚪 \`${leavePath}\``;
                     }
                 }
-
                 const title = isDesativada ? `**~~${index}. ${r.name}~~**` : `**${index}. ${r.name}**`;
                 return [
                     title,
@@ -273,51 +267,170 @@ export const rotinaListarCommand = {
                     r.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
                     r.scheduleId ? '└ ⏰ Agendada' : null,
                     actionsLine
-                ].join('\n');
+                ].filter(Boolean).join('\n');
             };
 
-            const activeBlocks = active.map((r, i) => makeBlock(r, i + 1, false));
-            const desativadasBlocks = desativadas.map((r, i) => makeBlock(r, i + 1, true));
+            const active = routines.filter(r => r.enabled !== false);
+            const desativadas = routines.filter(r => r.enabled === false);
 
-            let description = '';
-            if (activeBlocks.length > 0) {
-                description += activeBlocks.join('\n\n');
-            }
-            if (desativadasBlocks.length > 0) {
-                if (description) description += '\n\n';
-                description += `**━━━ Desativadas ━━━**\n\n` + desativadasBlocks.join('\n\n');
-            }
+            const state = { page: 1, status: 'todas', view: 'list' };
 
-            const originalLength = description.length;
-            logger.debug('CMD', 'rotina_listar description length', { length: originalLength, active: active.length, desativadas: desativadas.length });
-
-            let finalDescription = description || 'Nenhuma rotina para exibir.';
-            // Discord limita description do embed a 4096 caracteres; deixamos margem de segurança
-            const MAX_DESCRIPTION = 3800;
-            if (finalDescription.length > MAX_DESCRIPTION) {
-                finalDescription = finalDescription.slice(0, MAX_DESCRIPTION) + '\n\n...(lista truncada; muitas rotinas)';
+            function getFiltered() {
+                if (state.status === 'ativas') return active;
+                if (state.status === 'desativadas') return desativadas;
+                return routines;
             }
 
-            const embed = new EmbedBuilder()
-                .setTitle('📋 Suas rotinas')
-                .setColor(0x5865F2)
-                .setDescription(finalDescription)
-                .setFooter({ text: `${active.length} ativa(s), ${desativadas.length} desativada(s) · Do mais antigo ao mais novo` })
-                .setTimestamp();
+            function buildListEmbedAndComponents() {
+                const filtered = getFiltered();
+                const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+                const page = Math.min(Math.max(state.page, 1), totalPages);
+                const start = (page - 1) * PAGE_SIZE;
+                const pageItems = filtered.slice(start, start + PAGE_SIZE);
+                const blocks = pageItems.map((r, i) => makeBlock(r, start + i + 1, r.enabled === false));
+                const description = blocks.length > 0 ? blocks.join('\n\n') : 'Nenhuma rotina com este filtro.';
+                const statusLabel = state.status === 'ativas' ? 'Ativas' : state.status === 'desativadas' ? 'Desativadas' : 'Todas';
+                const embed = new EmbedBuilder()
+                    .setTitle('📋 Suas rotinas')
+                    .setColor(0x5865F2)
+                    .setDescription(description)
+                    .setFooter({
+                        text: `${statusLabel} · Página ${page}/${totalPages} · ${active.length} ativa(s), ${desativadas.length} desativada(s)`
+                    })
+                    .setTimestamp();
 
-            try {
-                await interaction.editReply({ embeds: [embed] });
-            } catch (errEmbed) {
-                logger.error('CMD', 'rotina_listar editReply failed', errEmbed.message || String(errEmbed), {
-                    stack: errEmbed?.stack,
-                    rawError: errEmbed?.rawError,
-                    descriptionLength: finalDescription.length
-                });
-                await interaction.editReply({
-                    content: 'Erro ao montar o resumo das rotinas (embed muito grande ou inválido). Tente reduzir o número de rotinas ou itens.',
-                    ephemeral: true
-                }).catch(() => {});
+                const prevBtn = new ButtonBuilder()
+                    .setCustomId('rotina_listar:prev')
+                    .setLabel('◀ Anterior')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page <= 1);
+                const nextBtn = new ButtonBuilder()
+                    .setCustomId('rotina_listar:next')
+                    .setLabel('Próxima ▶')
+                    .setStyle(ButtonStyle.Secondary)
+                    .setDisabled(page >= totalPages);
+                const filterLabel = state.status === 'todas' ? 'Filtro: Todas' : state.status === 'ativas' ? 'Filtro: Ativas' : 'Filtro: Desativadas';
+                const filterBtn = new ButtonBuilder()
+                    .setCustomId('rotina_listar:filter')
+                    .setLabel(filterLabel)
+                    .setStyle(ButtonStyle.Primary);
+                const row1 = new ActionRowBuilder().addComponents(prevBtn, nextBtn, filterBtn);
+
+                const selectOptions = pageItems.slice(0, 25).map((r) => ({
+                    label: (r.name || 'Sem nome').slice(0, 100),
+                    value: String(r._id),
+                    description: `${r.enabled !== false ? 'Ativa' : 'Desativada'} · ${timezoneToLabel(r.timezone)}`
+                }));
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId('rotina_listar:select')
+                    .setPlaceholder('Ver detalhes de uma rotina…')
+                    .addOptions(selectOptions.length ? selectOptions : [{ label: '—', value: '_none', description: 'Nenhuma na página' }]);
+                const row2 = new ActionRowBuilder().addComponents(select);
+
+                return { embed, components: [row1, row2] };
             }
+
+            function buildDetailEmbed(routineId) {
+                const routine = routines.find(r => String(r._id) === routineId);
+                if (!routine) return null;
+                const { horario, repetir } = cronToHuman(routine.cron);
+                const repetirLabel = routine.oneTime ? 'Uma vez só' : repetir;
+                const fuso = timezoneToLabel(routine.timezone);
+                const itens = (routine.items || []).length;
+                const itensList = (routine.items || []).map((item, i) => `${i + 1}. ${item.label} \`(${item.condition || 'always'})\``).join('\n') || '_Nenhum item._';
+                const isOwner = routine.userId === userId;
+                const isParticipant = Array.isArray(routine.participantIds) && routine.participantIds.includes(userId);
+                const lines = [];
+                lines.push(`🕐 **Horário:** ${horario} (${repetirLabel})`);
+                lines.push(`🌍 **Fuso:** ${fuso}`);
+                lines.push(`⚙️ **Uma vez só:** ${routine.oneTime ? 'Sim' : 'Não'}`);
+                lines.push(`✅ **Status:** ${routine.enabled ? 'Ativa' : 'Desativada'}`);
+                if (routine.scheduleId) lines.push(`⏰ **Agendada:** Sim`);
+                if (isOwner) lines.push('👤 **Dono:** você');
+                else if (isParticipant) lines.push('👥 **Você foi incluído por outro usuário**');
+                if (baseUrl && isOwner) {
+                    lines.push(`✏️ [Editar](${baseUrl}${editPath(routine._id)})  ·  🗑️ [Apagar](${baseUrl}${deletePath(routine._id)})`);
+                }
+                const embed = new EmbedBuilder()
+                    .setTitle(`🔍 ${routine.name}`)
+                    .setColor(0x5865F2)
+                    .setDescription(lines.join('\n'))
+                    .addFields({ name: `Itens (${itens})`, value: itensList })
+                    .setFooter({ text: 'Clique em "Voltar à lista" para continuar navegando.' })
+                    .setTimestamp();
+                const backBtn = new ButtonBuilder()
+                    .setCustomId('rotina_listar:back')
+                    .setLabel('← Voltar à lista')
+                    .setStyle(ButtonStyle.Secondary);
+                const row = new ActionRowBuilder().addComponents(backBtn);
+                return { embed, components: [row] };
+            }
+
+            const { embed: firstEmbed, components: firstComponents } = buildListEmbedAndComponents();
+            const message = await interaction.editReply({
+                embeds: [firstEmbed],
+                components: firstComponents,
+                fetchReply: true
+            });
+
+            const filter = (i) => i.user.id === userId;
+            const collector = message.createMessageComponentCollector({ filter, time: LIST_COLLECTOR_TIME_MS });
+
+            collector.on('collect', async (i) => {
+                try {
+                    if (i.isButton()) {
+                        if (i.customId === 'rotina_listar:back') {
+                            state.view = 'list';
+                            const { embed, components } = buildListEmbedAndComponents();
+                            await i.update({ embeds: [embed], components });
+                            return;
+                        }
+                        if (i.customId === 'rotina_listar:prev') {
+                            state.page = Math.max(1, state.page - 1);
+                            const { embed, components } = buildListEmbedAndComponents();
+                            await i.update({ embeds: [embed], components });
+                            return;
+                        }
+                        if (i.customId === 'rotina_listar:next') {
+                            const filtered = getFiltered();
+                            const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+                            state.page = Math.min(state.page + 1, totalPages);
+                            const { embed, components } = buildListEmbedAndComponents();
+                            await i.update({ embeds: [embed], components });
+                            return;
+                        }
+                        if (i.customId === 'rotina_listar:filter') {
+                            state.page = 1;
+                            if (state.status === 'todas') state.status = 'ativas';
+                            else if (state.status === 'ativas') state.status = 'desativadas';
+                            else state.status = 'todas';
+                            const { embed, components } = buildListEmbedAndComponents();
+                            await i.update({ embeds: [embed], components });
+                            return;
+                        }
+                    }
+                    if (i.isStringSelectMenu() && i.customId === 'rotina_listar:select') {
+                        const value = i.values[0];
+                        if (value === '_none') {
+                            await i.deferUpdate();
+                            return;
+                        }
+                        const result = buildDetailEmbed(value);
+                        if (result) {
+                            await i.update({ embeds: [result.embed], components: result.components });
+                        } else {
+                            await i.deferUpdate();
+                        }
+                    }
+                } catch (e) {
+                    logger.error('CMD', 'rotina_listar collector', e.message);
+                    await i.reply({ content: 'Erro ao atualizar. Tente /rotina_listar de novo.', ephemeral: true }).catch(() => {});
+                }
+            });
+
+            collector.on('end', () => {
+                // Opcional: remover botões ao expirar para evitar cliques fantasmas
+            });
         } catch (err) {
             logger.error('CMD', 'rotina_listar', err.message || String(err), {
                 stack: err?.stack,
