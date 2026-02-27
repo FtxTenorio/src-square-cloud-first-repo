@@ -771,6 +771,8 @@ export const rotinaListarCommand = {
             }
 
             const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
+            const editPath = (id) => `/routines/${id}/edit?userId=${userId}`;
+            const deletePath = (id) => `/routines/${id}/delete?userId=${userId}`;
 
             const active = routines.filter(r => r.enabled !== false);
             const desativadas = routines.filter(r => r.enabled === false);
