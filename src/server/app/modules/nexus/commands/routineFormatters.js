@@ -137,9 +137,11 @@ function buildListEmbedData(routines, userId, opts = {}) {
     );
     const active = routines.filter(r => r.enabled !== false).length;
     const desativadas = routines.length - active;
+    const rawDescription = blocks.join('\n\n') || 'Nenhuma rotina.';
+    const description = rawDescription.length > 4096 ? `${rawDescription.slice(0, 4090)}…` : rawDescription;
     return {
         title: '📋 Suas rotinas',
-        description: blocks.join('\n\n') || 'Nenhuma rotina.',
+        description,
         footer: `${routines.length} rotina(s) · ${active} ativa(s), ${desativadas} desativada(s)`,
         color: EMBED_COLOR
     };
@@ -176,10 +178,15 @@ function buildDetailEmbedData(routine, userId, opts = {}) {
         lines.push(`✏️ [Editar](${baseUrl}${editPath})  ·  🗑️ [Apagar](${baseUrl}${deletePath})`);
     }
 
+    const rawDescription = lines.join('\n');
+    const description = rawDescription.length > 4096 ? `${rawDescription.slice(0, 4090)}…` : rawDescription;
+    const rawItems = itensList;
+    const itemsValue = rawItems.length > 1024 ? `${rawItems.slice(0, 1018)}…` : rawItems;
+
     return {
         title: `🔍 ${routine.name}`,
-        description: lines.join('\n'),
-        fields: [{ name: `Itens (${itens})`, value: itensList }],
+        description,
+        fields: [{ name: `Itens (${itens})`, value: itemsValue }],
         color: EMBED_COLOR
     };
 }

@@ -230,6 +230,10 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
 
                     const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
                     const data = buildListEmbedData(routines, userId, { baseUrl });
+                    logToolDebug('list_routines', 'embed data', {
+                        descLength: data.description.length,
+                        footerLength: data.footer.length,
+                    });
                     const embed = new EmbedBuilder()
                         .setTitle(data.title)
                         .setColor(data.color)
