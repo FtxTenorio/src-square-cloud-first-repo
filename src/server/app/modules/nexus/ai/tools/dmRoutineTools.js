@@ -219,8 +219,12 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                         .setTimestamp();
                     await context.message.reply({ embeds: [embed] });
                     if (typeof context.saveToolInfo === 'function') {
-                        const content = `[Dados das rotinas para referência - use os ids para get_routine/update_routine/delete_routine]\n${formatRoutineListForHistory(routines)}`;
-                        await context.saveToolInfo({ toolType: 'list_routines', content });
+                        try {
+                            const content = `[Dados das rotinas para referência - use os ids para get_routine/update_routine/delete_routine]\n${formatRoutineListForHistory(routines)}`;
+                            await context.saveToolInfo({ toolType: 'list_routines', content });
+                        } catch (e) {
+                            logger.error('AI', 'dmRoutineTool list_routines saveToolInfo', e.message || String(e));
+                        }
                     }
                     if (statusMsg) {
                         try {
@@ -255,8 +259,12 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                         .setTimestamp();
                     await context.message.reply({ embeds: [embed] });
                     if (typeof context.saveToolInfo === 'function') {
-                        const content = `[Detalhe da rotina para edição - use update_routine com estes dados]\n${formatRoutineDetailForHistory(routine)}`;
-                        await context.saveToolInfo({ toolType: 'get_routine', content });
+                        try {
+                            const content = `[Detalhe da rotina para edição - use update_routine com estes dados]\n${formatRoutineDetailForHistory(routine)}`;
+                            await context.saveToolInfo({ toolType: 'get_routine', content });
+                        } catch (e) {
+                            logger.error('AI', 'dmRoutineTool get_routine saveToolInfo', e.message || String(e));
+                        }
                     }
                     if (statusMsg) {
                         try {
@@ -304,8 +312,12 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                         .setTimestamp();
                     await context.message.reply({ embeds: [embed] });
                     if (typeof context.saveToolInfo === 'function') {
-                        const content = `[Rotina atualizada - estado atual para futuras edições]\n${formatRoutineDetailForHistory(updated.toObject?.() || updated)}`;
-                        await context.saveToolInfo({ toolType: 'get_routine', content });
+                        try {
+                            const content = `[Rotina atualizada - estado atual para futuras edições]\n${formatRoutineDetailForHistory(updated.toObject?.() || updated)}`;
+                            await context.saveToolInfo({ toolType: 'get_routine', content });
+                        } catch (e) {
+                            logger.error('AI', 'dmRoutineTool update_routine saveToolInfo', e.message || String(e));
+                        }
                     }
                 }
                 if (statusMsg) {
