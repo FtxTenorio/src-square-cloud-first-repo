@@ -92,6 +92,80 @@ export async function start(token) {
     return client;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Frieren: fluxos separados Server (menção) vs DM (resposta direta)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Helper compartilhado: obtém histórico, salva mensagem do usuário, gera resposta IA, envia e persiste.
+ * Usado por handleFrierenDM e handleFrierenGuildMention para evitar duplicação.
+ * @param {import('discord.js').Message} message
+ * @param {string} content - Texto já limpo (no server, menção já removida)
+ * @param {object} options - { chatHistoryService }
+ */
+async function respondWithFrieren(message, content, options) {
+    message.channel.sendTyping();
+
+    const history = options.chatHistoryService
+        ? await options.chatHistoryService.getContextMessages(message.guild?.id ?? null, message.channel.id, 50)
+        : [];
+
+    if (options.chatHistoryService) {
+        await options.chatHistoryService.saveMessage(message, 'user');
+    }
+
+    const messageData = {
+        author: message.author,
+        channel: message.channel,
+        content,
+        userId: message.author.id,
+        channelId: message.channel.id,
+        guildId: message.guild?.id ?? null,
+    };
+
+    const result = await ai.generateResponse(messageData, history);
+    const responseContent = result.content;
+
+    const sentMessage = await message.reply(responseContent);
+
+    if (options.chatHistoryService) {
+        await options.chatHistoryService.saveBotResponse({
+            guildId: message.guild?.id ?? null,
+            channelId: message.channel.id,
+            messageId: sentMessage.id,
+            content: responseContent,
+            replyToMessageId: message.id,
+        });
+    }
+
+    return sentMessage;
+}
+
+/**
+ * Fluxo DM: Frieren responde diretamente a qualquer mensagem (sem precisar marcar).
+ * Use este fluxo para features específicas de conversa privada.
+ */
+async function handleFrierenDM(client, message, options) {
+    const content = (message.content || '').trim();
+    if (!content) return;
+
+    await respondWithFrieren(message, content, options);
+}
+
+/**
+ * Fluxo Servidor (guild): Frieren só responde quando é mencionada (@bot).
+ * Use este fluxo para features específicas de canal (mood por canal, personalidade, etc.).
+ */
+async function handleFrierenGuildMention(client, message, options) {
+    const mentionRegex = new RegExp(`<@!?${client.user.id}>`, 'g');
+    const content = (message.content || '').replace(mentionRegex, '').trim();
+    if (!content) return;
+
+    await respondWithFrieren(message, content, options);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
  * Setup core event handlers
  */
@@ -163,55 +237,16 @@ function setupCoreEvents(client, options) {
                 }
             }
             
-            // AI response (mentions or DMs)
-            const isMentioned = message.mentions.has(client.user);
+            // Frieren: fluxos separados — DM = resposta direta; Servidor = só quando mencionada
             const isDM = !message.guild;
+            const isMentioned = message.mentions.has(client.user);
 
-            if (isMentioned || isDM) {
-                const content = message.content
-                    .replace(new RegExp(`<@!?${client.user.id}>`, 'g'), '')
-                    .trim();
-                
-                if (!content) return;
-                
-                message.channel.sendTyping();
-
-                // Histórico do canal ANTES de salvar esta mensagem (para não duplicar a atual no contexto)
-                const history = options.chatHistoryService
-                    ? await options.chatHistoryService.getContextMessages(message.guild?.id || null, message.channel.id, 50)
-                    : [];
-
-                // Salvar mensagem de quem mencionou (todas são salvas para contexto do canal)
-                if (options.chatHistoryService) {
-                    await options.chatHistoryService.saveMessage(message, 'user');
-                }
-
-                const messageData = {
-                    author: message.author,
-                    channel: message.channel,
-                    content,
-                    userId: message.author.id,
-                    channelId: message.channel.id,
-                    guildId: message.guild?.id || null
-                };
-                
-                const result = await ai.generateResponse(messageData, history);
-                const responseContent = result.content;
-
-                const sentMessage = await message.reply(responseContent);
-
-                // Save bot response to DB
-                if (options.chatHistoryService) {
-                    await options.chatHistoryService.saveBotResponse({
-                        guildId: message.guild?.id,
-                        channelId: message.channel.id,
-                        messageId: sentMessage.id,
-                        content: responseContent,
-                        replyToMessageId: message.id
-                    });
-                }
+            if (isDM) {
+                await handleFrierenDM(client, message, options);
+            } else if (isMentioned) {
+                await handleFrierenGuildMention(client, message, options);
             } else {
-                // Salvar todas as mensagens do canal (sem menção) para a Frieren ver o chat
+                // Servidor sem menção: só salva mensagem para a Frieren ter contexto do canal
                 if (options.chatHistoryService) {
                     await options.chatHistoryService.saveMessage(message, 'user');
                 }
