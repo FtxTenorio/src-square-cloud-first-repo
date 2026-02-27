@@ -188,7 +188,10 @@ export const rotinaCriarCommand = {
 
             await interaction.editReply({ embeds: [embed] });
         } catch (err) {
-            logger.error('CMD', 'rotina_criar', err.message);
+            logger.error('CMD', 'rotina_criar', err.message || String(err), {
+                stack: err?.stack,
+                rawError: err?.rawError
+            });
             await interaction.editReply({
                 content: `Erro ao criar rotina: ${err.message}`,
                 ephemeral: true
@@ -210,7 +213,13 @@ export const rotinaListarCommand = {
         try {
             const userId = interaction.user.id;
             const guildId = interaction.options.getString('servidor') || null;
+            logger.info('CMD', `rotina_listar invoked by ${userId} (guild filter: ${guildId ?? 'all'})`);
             const routines = await routineService.getRoutinesByUser(userId, guildId);
+            logger.debug?.('CMD', 'rotina_listar routines raw', {
+                count: routines.length,
+                ids: routines.map(r => r._id?.toString?.() || String(r._id || '')),
+                owners: [...new Set(routines.map(r => r.userId))]
+            });
 
             if (routines.length === 0) {
                 await interaction.editReply({
@@ -279,16 +288,41 @@ export const rotinaListarCommand = {
                 description += `**━━━ Desativadas ━━━**\n\n` + desativadasBlocks.join('\n\n');
             }
 
+            const originalLength = description.length;
+            logger.debug('CMD', 'rotina_listar description length', { length: originalLength, active: active.length, desativadas: desativadas.length });
+
+            let finalDescription = description || 'Nenhuma rotina para exibir.';
+            // Discord limita description do embed a 4096 caracteres; deixamos margem de segurança
+            const MAX_DESCRIPTION = 3800;
+            if (finalDescription.length > MAX_DESCRIPTION) {
+                finalDescription = finalDescription.slice(0, MAX_DESCRIPTION) + '\n\n...(lista truncada; muitas rotinas)';
+            }
+
             const embed = new EmbedBuilder()
                 .setTitle('📋 Suas rotinas')
                 .setColor(0x5865F2)
-                .setDescription(description)
+                .setDescription(finalDescription)
                 .setFooter({ text: `${active.length} ativa(s), ${desativadas.length} desativada(s) · Do mais antigo ao mais novo` })
                 .setTimestamp();
 
-            await interaction.editReply({ embeds: [embed] });
+            try {
+                await interaction.editReply({ embeds: [embed] });
+            } catch (errEmbed) {
+                logger.error('CMD', 'rotina_listar editReply failed', errEmbed.message || String(errEmbed), {
+                    stack: errEmbed?.stack,
+                    rawError: errEmbed?.rawError,
+                    descriptionLength: finalDescription.length
+                });
+                await interaction.editReply({
+                    content: 'Erro ao montar o resumo das rotinas (embed muito grande ou inválido). Tente reduzir o número de rotinas ou itens.',
+                    ephemeral: true
+                }).catch(() => {});
+            }
         } catch (err) {
-            logger.error('CMD', 'rotina_listar', err.message);
+            logger.error('CMD', 'rotina_listar', err.message || String(err), {
+                stack: err?.stack,
+                rawError: err?.rawError
+            });
             await interaction.editReply({
                 content: `Erro ao listar: ${err.message}`,
                 ephemeral: true

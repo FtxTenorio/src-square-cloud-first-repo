@@ -61,7 +61,10 @@ export async function getRoutinesByUser(userId, guildId = null) {
         ]
     };
     if (guildId != null) query.guildId = guildId;
-    return Routine.find(query).sort({ createdAt: 1 }).lean();
+    logger.debug?.('EVENTS', `getRoutinesByUser query`, { userId, guildId, query });
+    const routines = await Routine.find(query).sort({ createdAt: 1 }).lean();
+    logger.info('EVENTS', `getRoutinesByUser → ${routines.length} rotina(s) para user=${userId} guild=${guildId ?? 'any'}`);
+    return routines;
 }
 
 /**
