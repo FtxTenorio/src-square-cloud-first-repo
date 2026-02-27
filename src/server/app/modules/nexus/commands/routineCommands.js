@@ -18,15 +18,7 @@ import {
 import * as routineService from '../../events/services/routineService.js';
 import * as userPreferenceService from '../../events/services/userPreferenceService.js';
 import logger from '../utils/logger.js';
-
-const TIMEZONE_CHOICES = [
-    { name: '🇧🇷 São Paulo', value: 'America/Sao_Paulo' },
-    { name: '🇬🇧 Londres', value: 'Europe/London' },
-    { name: '🇺🇸 Nova York', value: 'America/New_York' },
-    { name: '🇫🇷 Paris', value: 'Europe/Paris' },
-    { name: '🇩🇪 Berlim', value: 'Europe/Berlin' },
-    { name: 'UTC', value: 'UTC' }
-];
+import { TIMEZONE_CHOICES, cronToHuman, timezoneToLabel, formatRoutineBlock } from './routineFormatters.js';
 
 const REPETIR_CHOICES = [
     { name: 'Uma vez só (não repetir)', value: 'uma_vez' },
@@ -48,94 +40,11 @@ const REPETIR_CHOICES_FORM = REPETIR_CHOICES.filter(c => c.value !== 'uma_vez');
 
 const ROTINA_CRIAR_CHOICE_PREFIX = 'rotina_criar_choice:';
 
-/** Cron (min hr * * dow) → { horario: "08:00", repetir: "Segunda a Sexta" } */
-function cronToHuman(cron) {
-    if (!cron || typeof cron !== 'string') return { horario: '—', repetir: '—' };
-    const parts = cron.trim().split(/\s+/);
-    if (parts.length < 5) return { horario: cron, repetir: '—' };
-    const [min, hr] = parts;
-    const dow = parts[4];
-    const hour = parseInt(hr, 10);
-    const minute = parseInt(min, 10);
-    const horario = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
-    const dowLabels = {
-        '*': 'Todo dia',
-        '1-5': 'Segunda a Sexta',
-        '0,6': 'Fim de semana (Sáb e Dom)',
-        '0': 'Domingo', '1': 'Segunda', '2': 'Terça', '3': 'Quarta',
-        '4': 'Quinta', '5': 'Sexta', '6': 'Sábado'
-    };
-    const repetir = dow.includes(',')
-        ? dow.split(',').map(n => dowLabels[n.trim()] || n).filter(Boolean).join(', ')
-        : (dowLabels[dow] ?? dow);
-    return { horario, repetir };
-}
-
 /** "segunda, sexta" → "Segunda, Sexta" */
 function formatDiasLabel(diasStr) {
     if (!diasStr) return 'Vários dias';
     const labels = { domingo: 'Domingo', segunda: 'Segunda', terca: 'Terça', quarta: 'Quarta', quinta: 'Quinta', sexta: 'Sexta', sabado: 'Sábado' };
     return diasStr.split(',').map(s => labels[s.trim().toLowerCase()] || s.trim()).filter(Boolean).join(', ');
-}
-
-/** IANA timezone → nome curto para exibição */
-function timezoneToLabel(tz) {
-    if (!tz) return '—';
-    const found = TIMEZONE_CHOICES.find(c => c.value === tz);
-    return found ? found.name : tz.split('/').pop()?.replace(/_/g, ' ') ?? tz;
-}
-
-/**
- * Formato único de exibição de uma rotina (listar e mensagem de sucesso ao criar).
- * @param {object} routine - Documento da rotina (name, cron, timezone, items, oneTime, userId, participantIds, _id, enabled, scheduleId)
- * @param {string} userId - ID do usuário que está vendo (para dono/participante e links)
- * @param {object} [opts] - { baseUrl?, index?, isDesativada? }
- * @returns {string} Bloco de texto no mesmo formato dos itens da lista
- */
-function formatRoutineBlock(routine, userId, opts = {}) {
-    const baseUrl = opts.baseUrl ?? (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
-    const index = opts.index ?? 1;
-    const isDesativada = opts.isDesativada ?? (routine.enabled === false);
-    const editPath = (id) => `/routines/${id}/edit?userId=${userId}`;
-    const deletePath = (id) => `/routines/${id}/delete?userId=${userId}`;
-
-    const { horario, repetir } = cronToHuman(routine.cron);
-    const repetirLabel = routine.oneTime ? 'Uma vez só' : repetir;
-    const fuso = timezoneToLabel(routine.timezone);
-    const itens = (routine.items || []).length;
-    const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
-    const isOwner = routine.userId === userId;
-    const isParticipant = Array.isArray(routine.participantIds) && routine.participantIds.includes(userId);
-    const roleLine = isOwner
-        ? '├ 👤 Dono: você'
-        : (isParticipant ? '├ 👥 Você foi incluído nesta rotina por outro usuário' : null);
-    let actionsLine = null;
-    if (baseUrl) {
-        if (isOwner) {
-            actionsLine = `└ ✏️ [Editar](${baseUrl}${editPath(routine._id)})  ·  🗑️ [Apagar](${baseUrl}${deletePath(routine._id)})`;
-        } else if (isParticipant) {
-            const leavePath = `/routines/${routine._id}/leave?userId=${userId}`;
-            actionsLine = `└ 🚪 [Sair desta rotina](${baseUrl}${leavePath})`;
-        }
-    } else {
-        if (isOwner) {
-            actionsLine = `└ ✏️ \`${editPath(routine._id)}\`  ·  🗑️ \`${deletePath(routine._id)}\``;
-        } else if (isParticipant) {
-            const leavePath = `/routines/${routine._id}/leave?userId=${userId}`;
-            actionsLine = `└ 🚪 \`${leavePath}\``;
-        }
-    }
-    const title = isDesativada ? `**~~${index}. ${routine.name}~~**` : `**${index}. ${routine.name}**`;
-    return [
-        title,
-        `├ 🕐 ${horario}  ·  ${repetirLabel}`,
-        `├ 🌍 ${fuso}  ·  ${itensStr}`,
-        roleLine,
-        routine.oneTime ? '└ ⏰ Uma vez só' : null,
-        routine.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
-        routine.scheduleId ? '└ ⏰ Agendada' : null,
-        actionsLine
-    ].filter(Boolean).join('\n');
 }
 
 /** Máximo de opções de usuário no slash (Discord limita 25 opções por comando; temos 6 fixas). */

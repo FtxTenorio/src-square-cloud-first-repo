@@ -75,6 +75,36 @@ export async function saveBotResponse({ guildId, channelId, messageId, content, 
 }
 
 /**
+ * Salva uma mensagem de "info de tool" no histórico para a IA ter acesso aos dados (rotinas etc.).
+ * No getContextMessages aplicamos limite de 1 mensagem por toolType nas últimas 50.
+ * @param {object} params - { guildId, channelId, userId, username, toolType, content }
+ * @returns {Promise<ChatHistory|null>}
+ */
+export async function saveToolInfoMessage({ guildId, channelId, userId, username, toolType, content }) {
+    if (!toolType || !content) return null;
+    try {
+        const messageId = `tool-${toolType}-${channelId}-${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        const historyEntry = await ChatHistory.create({
+            guildId: guildId || 'DM',
+            channelId,
+            userId: 'bot',
+            username: username || 'Frieren',
+            userTag: 'Frieren#0000',
+            messageId,
+            content,
+            role: 'bot',
+            conversationId: channelId,
+            toolType
+        });
+        return historyEntry;
+    } catch (error) {
+        if (error.code === 11000) return null;
+        logger.error('AI', 'Erro ao salvar tool info no histórico', error.message);
+        return null;
+    }
+}
+
+/**
  * Get chat history for a user in a channel
  * @param {string} userId 
  * @param {string} channelId 
@@ -128,6 +158,7 @@ export async function getConversation(conversationId, limit = 50) {
  * Get recent messages for context (for AI/bot memory)
  * Por servidor + canal: todas as mensagens do canal (todos os usuários + bot).
  * Inclui username para a IA enxergar quem disse o quê no chat.
+ * Limite de 1 mensagem por toolType (list_routines, get_routine) no conjunto: sempre a mais recente de cada tipo.
  * @param {string|null} guildId 
  * @param {string} channelId 
  * @param {number} limit 
@@ -143,13 +174,28 @@ export async function getContextMessages(guildId, channelId, limit = 50) {
         filter.guildId = guildId;
     }
 
+    // Buscar um pouco a mais para ter margem após dedupe por toolType
+    const fetchLimit = Math.max(limit + 20, 80);
     const messages = await ChatHistory.find(filter)
         .sort({ createdAt: -1 })
-        .limit(limit)
-        .select('role content createdAt username')
+        .limit(fetchLimit)
+        .select('role content createdAt username toolType')
         .lean();
 
-    return messages.reverse().map(m => ({
+    const chronological = messages.reverse();
+    const seenToolTypes = new Set();
+    const filtered = [];
+
+    for (const m of chronological) {
+        if (m.toolType) {
+            if (seenToolTypes.has(m.toolType)) continue;
+            seenToolTypes.add(m.toolType);
+        }
+        filtered.push(m);
+    }
+
+    const lastN = filtered.slice(-limit);
+    return lastN.map(m => ({
         role: m.role === 'bot' ? 'assistant' : 'user',
         content: m.content,
         username: m.username || (m.role === 'bot' ? 'Frieren' : null)
@@ -215,6 +261,7 @@ export async function searchMessages(query, filters = {}) {
 export default {
     saveMessage,
     saveBotResponse,
+    saveToolInfoMessage,
     getUserHistory,
     getChannelHistory,
     getConversation,

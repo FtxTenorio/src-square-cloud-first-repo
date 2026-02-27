@@ -52,6 +52,13 @@ const ChatHistory = createModel('ChatHistory', {
         enum: ['user', 'bot', 'system'],
         default: 'user'
     },
+
+    // Tool info: quando preenchido, é mensagem de "dados de tool" para a IA (list_routines, get_routine). No contexto, mantém no máximo 1 por tipo nas últimas 50.
+    toolType: {
+        type: String,
+        default: null,
+        index: true
+    },
     
     // For threading/conversations
     conversationId: {

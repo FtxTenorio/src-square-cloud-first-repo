@@ -115,7 +115,7 @@ const MAX_TOOL_ROUNDS = 5;
  * @param {string} content - User message
  * @param {object} personality - Personality config
  * @param {array} history - Conversation history
- * @param {object} options - { currentUsername, model, maxTokens, temperature, tools, executeTool(userId, name, args) }
+ * @param {object} options - { currentUsername, model, maxTokens, temperature, tools, executeTool(userId, name, args, context), messageContext }
  */
 export async function generateResponseWithTools(content, personality, history = [], options = {}) {
     if (!isConfigured()) {
@@ -131,7 +131,7 @@ export async function generateResponseWithTools(content, personality, history = 
         ? `${personality.systemPrompt} Responda em português brasileiro. Seja concisa.`
         : 'Você é um assistente amigável. Responda em português brasileiro.';
     const systemContent = tools?.length
-        ? `${systemBase}\n\nVocê tem acesso a ferramentas para listar, ver detalhes, atualizar e apagar rotinas do usuário. Use-as quando o usuário pedir para ver rotinas, editar uma rotina ou apagar. Depois de executar, responda em linguagem natural com o resultado.`
+        ? `${systemBase}\n\nVocê tem acesso a ferramentas para listar, ver detalhes, atualizar e apagar rotinas. Quando usar list_routines ou get_routine, o resultado já foi enviado ao usuário em um embed no Discord. Nesse caso, responda APENAS com uma frase curta (ex: "Pronto!", "Aqui estão.") — NÃO repita lista, blocos (├ └), nomes de rotinas nem horários. Para update/delete, confirme em uma frase.`
         : systemBase;
     const systemWithContext = `${systemContent}\n\nContexto: as mensagens abaixo são as últimas da conversa. NÃO use formato [Nome]: na sua resposta; responda direto como Frieren.`;
 
@@ -215,7 +215,7 @@ export async function generateResponseWithTools(content, personality, history = 
                 args = {};
             }
             const result = executeTool && userId
-                ? await executeTool(userId, name, args)
+                ? await executeTool(userId, name, args, options.messageContext || {})
                 : JSON.stringify({ error: 'Tool executor not available' });
             messages.push({
                 role: 'tool',

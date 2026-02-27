@@ -123,7 +123,20 @@ async function respondWithFrieren(message, content, options) {
         guildId: message.guild?.id ?? null,
     };
 
-    const result = await ai.generateResponse(messageData, history);
+    const saveToolInfo = options.chatHistoryService
+        ? async ({ toolType, content }) => {
+            await options.chatHistoryService.saveToolInfoMessage({
+                guildId: message.guild?.id ?? 'DM',
+                channelId: message.channel.id,
+                userId: message.author.id,
+                username: message.author.username,
+                toolType,
+                content,
+            });
+          }
+        : undefined;
+
+    const result = await ai.generateResponse(messageData, history, { discordMessage: message, saveToolInfo });
     const responseContent = result.content;
 
     const sentMessage = await message.reply(responseContent);

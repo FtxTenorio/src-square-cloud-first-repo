@@ -130,7 +130,8 @@ export async function generateResponse(message, history = [], options = {}) {
                     ...baseOptions,
                     userId,
                     tools: DM_ROUTINE_TOOLS,
-                    executeTool: executeDmRoutineTool
+                    executeTool: executeDmRoutineTool,
+                    messageContext: { message: options.discordMessage, saveToolInfo: options.saveToolInfo }
                 });
                 return { content: result.content, moodResult };
             }
