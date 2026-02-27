@@ -365,12 +365,38 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                 let statusMsg = null;
                 if (context?.message) {
                     statusMsg = await context.message.reply({
-                        content: '⏳ Frieren está removendo essa rotina...',
+                        content: '⏳ Frieren está removendo essa rotina (ou tirando você dela)...',
                     }).catch(() => null);
                 }
                 const deleted = await routineService.deleteRoutine(id, userId);
                 logToolDebug('delete_routine', 'deleteRoutine ok', { routineId: id, deleted: !!deleted });
-                if (!deleted) return JSON.stringify({ error: 'Rotina não encontrada ou você não é o dono.' });
+
+                // Se não conseguiu apagar (não é dono), tenta só remover o usuário da rotina (leaveRoutineForUser)
+                if (!deleted) {
+                    const left = await routineService.leaveRoutineForUser(id, userId);
+                    logToolDebug('delete_routine', 'leaveRoutineForUser', { routineId: id, left: !!left });
+                    if (left) {
+                        if (statusMsg) {
+                            try {
+                                await statusMsg.edit('✅ Você foi removido desta rotina.');
+                                setTimeout(() => {
+                                    statusMsg.delete().catch(() => {});
+                                }, 4000);
+                            } catch {}
+                        }
+                        return JSON.stringify({ ok: true, message: `Você foi removido da rotina "${left.name}".` });
+                    }
+                    if (statusMsg) {
+                        try {
+                            await statusMsg.edit('⚠️ Não foi possível remover a rotina nem tirar você dela.');
+                            setTimeout(() => {
+                                statusMsg.delete().catch(() => {});
+                            }, 5000);
+                        } catch {}
+                    }
+                    return JSON.stringify({ error: 'Rotina não encontrada ou você não tem acesso.' });
+                }
+
                 if (statusMsg) {
                     try {
                         await statusMsg.edit('✅ Rotina removida.');
