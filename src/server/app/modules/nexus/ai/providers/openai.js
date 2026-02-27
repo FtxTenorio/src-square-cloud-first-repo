@@ -108,6 +108,132 @@ export async function generateResponse(content, personality, history = [], optio
     }
 }
 
+const MAX_TOOL_ROUNDS = 5;
+
+/**
+ * Generate response with optional tools (function calling). Used in DM for routine tools.
+ * @param {string} content - User message
+ * @param {object} personality - Personality config
+ * @param {array} history - Conversation history
+ * @param {object} options - { currentUsername, model, maxTokens, temperature, tools, executeTool(userId, name, args) }
+ */
+export async function generateResponseWithTools(content, personality, history = [], options = {}) {
+    if (!isConfigured()) {
+        throw new Error('OpenAI API key not configured');
+    }
+
+    const currentUsername = options.currentUsername;
+    const userId = options.userId;
+    const tools = options.tools;
+    const executeTool = options.executeTool;
+
+    const systemBase = personality?.systemPrompt
+        ? `${personality.systemPrompt} Responda em português brasileiro. Seja concisa.`
+        : 'Você é um assistente amigável. Responda em português brasileiro.';
+    const systemContent = tools?.length
+        ? `${systemBase}\n\nVocê tem acesso a ferramentas para listar, ver detalhes, atualizar e apagar rotinas do usuário. Use-as quando o usuário pedir para ver rotinas, editar uma rotina ou apagar. Depois de executar, responda em linguagem natural com o resultado.`
+        : systemBase;
+    const systemWithContext = `${systemContent}\n\nContexto: as mensagens abaixo são as últimas da conversa. NÃO use formato [Nome]: na sua resposta; responda direto como Frieren.`;
+
+    const historyMessages = history.slice(-HISTORY_LIMIT).map(h => ({
+        role: h.role === 'user' ? 'user' : 'assistant',
+        content: formatMessageContent(h)
+    }));
+
+    const currentContent = currentUsername ? `[${currentUsername}]: ${content}`.trim() : content;
+
+    let messages = [
+        { role: 'system', content: systemWithContext },
+        ...historyMessages,
+        { role: 'user', content: currentContent }
+    ];
+
+    const model = options.model || DEFAULT_MODEL;
+    const maxTokens = options.maxTokens ?? MAX_TOKENS;
+    const temperature = options.temperature ?? TEMPERATURE;
+
+    const startTime = Date.now();
+    let round = 0;
+
+    while (round < MAX_TOOL_ROUNDS) {
+        round++;
+        const body = {
+            model,
+            messages,
+            max_tokens: maxTokens,
+            temperature
+        };
+        if (tools?.length) body.tools = tools;
+
+        logger.ai.request('openai', model, round > 1 ? ` (tool round ${round})` : '');
+
+        const { data } = await axios.post(OPENAI_API_URL, body, {
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+            },
+            timeout: 60000
+        });
+
+        if (data.error) throw new Error(data.error.message);
+
+        const choice = data.choices[0];
+        if (!choice) throw new Error('No choice in OpenAI response');
+
+        const message = choice.message;
+        const toolCalls = message.tool_calls;
+
+        if (!toolCalls?.length) {
+            const text = message.content || '';
+            const elapsed = Date.now() - startTime;
+            logger.ai.response(text.length, elapsed);
+            return {
+                content: text,
+                provider: 'openai',
+                model: data.model,
+                usage: data.usage,
+                elapsed
+            };
+        }
+
+        messages.push({
+            role: 'assistant',
+            content: message.content || null,
+            tool_calls: toolCalls.map(tc => ({
+                id: tc.id,
+                type: 'function',
+                function: { name: tc.function?.name, arguments: tc.function?.arguments || '{}' }
+            }))
+        });
+
+        for (const tc of toolCalls) {
+            const name = tc.function?.name;
+            let args = {};
+            try {
+                args = typeof tc.function?.arguments === 'string' ? JSON.parse(tc.function.arguments) : {};
+            } catch {
+                args = {};
+            }
+            const result = executeTool && userId
+                ? await executeTool(userId, name, args)
+                : JSON.stringify({ error: 'Tool executor not available' });
+            messages.push({
+                role: 'tool',
+                tool_call_id: tc.id,
+                content: typeof result === 'string' ? result : JSON.stringify(result)
+            });
+        }
+    }
+
+    const elapsed = Date.now() - startTime;
+    logger.ai.response(0, elapsed);
+    return {
+        content: 'Desculpe, passei por muitas etapas de ferramentas. Pode repetir o que precisava?',
+        provider: 'openai',
+        elapsed
+    };
+}
+
 /**
  * Stream response from OpenAI (for long responses)
  */
@@ -178,5 +304,6 @@ export async function streamResponse(content, personality, history = [], onChunk
 export default {
     isConfigured,
     generateResponse,
+    generateResponseWithTools,
     streamResponse
 };

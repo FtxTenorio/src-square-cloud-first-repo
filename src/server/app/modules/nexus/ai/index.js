@@ -12,6 +12,7 @@ import * as chatService from '../services/chatService.js';
 import * as personalityService from '../services/personalityService.js';
 import AppConfig from '../../cmdhub/models/AppConfig.js';
 import ServerConfig from '../../cmdhub/models/ServerConfig.js';
+import { DM_ROUTINE_TOOLS, executeDmRoutineTool } from './tools/dmRoutineTools.js';
 
 const AI_CONFIG_DEFAULTS = { model: 'gpt-4o-mini', maxTokens: 500, temperature: 0.8 };
 
@@ -115,13 +116,26 @@ export async function generateResponse(message, history = [], options = {}) {
     if (openai.isConfigured()) {
         try {
             const aiConfig = await getOpenAIConfig(guildId);
-            const result = await openai.generateResponse(content, personality, history, {
+            const baseOptions = {
                 currentUsername: message.author?.username,
                 model: aiConfig.model,
                 maxTokens: aiConfig.maxTokens,
                 temperature: aiConfig.temperature
-            });
+            };
 
+            // DM: habilitar funções (tools) para a IA ler e editar rotinas do usuário
+            const isDM = guildId == null;
+            if (isDM) {
+                const result = await openai.generateResponseWithTools(content, personality, history, {
+                    ...baseOptions,
+                    userId,
+                    tools: DM_ROUTINE_TOOLS,
+                    executeTool: executeDmRoutineTool
+                });
+                return { content: result.content, moodResult };
+            }
+
+            const result = await openai.generateResponse(content, personality, history, baseOptions);
             return {
                 content: result.content,
                 moodResult

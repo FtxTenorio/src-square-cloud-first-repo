@@ -1,8 +1,11 @@
 /**
  * Deploy Slash Commands to Discord API
  * Run this script once to register all commands with Discord
- * 
+ *
  * Usage: node scripts/deploy-commands.js
+ *
+ * - Sem DISCORD_GUILD_ID → deploy GLOBAL: comandos aparecem em todos os servidores e na DM.
+ * - Com DISCORD_GUILD_ID → deploy só naquele servidor: comandos NÃO aparecem na DM.
  */
 import { REST, Routes } from 'discord.js';
 import * as fs from 'fs';
@@ -10,7 +13,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 
-// Load environment variables
+import logger from '../src/app/modules/nexus/utils/logger.js';
+
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,10 +40,10 @@ async function deployCommands() {
             const command = await (await import(filePath)).default;
             if ('data' in command) {
                 commands.push(command.data.toJSON());
-                console.log(`✅ Loaded: ${command.data.name}`);
+                logger.success('DEPLOY', `Loaded: ${command.data.name}`);
             }
         } catch (error) {
-            console.error(`❌ Error loading ${file}:`, error.message);
+            logger.error('DEPLOY', `Error loading ${file}`, error.message);
         }
     }
     
@@ -54,11 +58,11 @@ async function deployCommands() {
     for (const command of allServiceCommands) {
         if ('data' in command) {
             commands.push(command.data.toJSON());
-            console.log(`✅ Loaded: ${command.data.name}`);
+            logger.success('DEPLOY', `Loaded: ${command.data.name}`);
         }
     }
-    
-    console.log(`\n📦 Total commands to deploy: ${commands.length}`);
+
+    logger.info('DEPLOY', `Total commands to deploy: ${commands.length}`);
     
     // Validate environment variables
     const token = process.env.DISCORD_TOKEN || process.env.DISCORD_SECRET_KEY;
@@ -66,13 +70,10 @@ async function deployCommands() {
     const guildId = process.env.DISCORD_GUILD_ID; // Optional: for guild-specific commands
     
     if (!token || !clientId) {
-        console.error('\n❌ Missing environment variables!');
-        console.error('Required: DISCORD_TOKEN (ou DISCORD_SECRET_KEY), DISCORD_CLIENT_ID');
-        console.error('Optional: DISCORD_GUILD_ID (for guild-specific deployment)');
-        console.error('\n💡 Para encontrar o DISCORD_CLIENT_ID:');
-        console.error('   1. Vá para https://discord.com/developers/applications');
-        console.error('   2. Selecione sua aplicação');
-        console.error('   3. Copie o "Application ID" na aba General Information');
+        logger.error('DEPLOY', 'Missing environment variables!');
+        logger.error('DEPLOY', 'Required: DISCORD_TOKEN (ou DISCORD_SECRET_KEY), DISCORD_CLIENT_ID');
+        logger.error('DEPLOY', 'Optional: DISCORD_GUILD_ID (for guild-specific deployment)');
+        logger.info('DEPLOY', 'Para encontrar o DISCORD_CLIENT_ID: vá em https://discord.com/developers/applications → sua aplicação → Application ID na aba General Information');
         process.exit(1);
     }
     
@@ -80,38 +81,34 @@ async function deployCommands() {
     const rest = new REST({ version: '10' }).setToken(token);
     
     try {
-        console.log('\n🚀 Starting deployment...\n');
-        
+        logger.info('DEPLOY', 'Starting deployment...');
+
         let data;
-        
+
         if (guildId) {
-            // Deploy to specific guild (instant, good for testing)
-            console.log(`📍 Deploying to guild: ${guildId}`);
+            logger.info('DEPLOY', `Deploying to guild: ${guildId}`);
+            logger.warn('DEPLOY', 'Comandos em um guild só NÃO aparecem na DM. Para DM, rode sem DISCORD_GUILD_ID (deploy global).');
             data = await rest.put(
                 Routes.applicationGuildCommands(clientId, guildId),
                 { body: commands }
             );
         } else {
-            // Deploy globally (takes up to 1 hour to propagate)
-            console.log('🌍 Deploying globally (may take up to 1 hour)');
+            logger.info('DEPLOY', 'Deploying globally (may take up to 1 hour to propagate)');
             data = await rest.put(
                 Routes.applicationCommands(clientId),
                 { body: commands }
             );
         }
-        
-        console.log(`\n✅ Successfully deployed ${data.length} commands!`);
-        
-        // List deployed commands
-        console.log('\n📋 Deployed commands:');
+
+        logger.success('DEPLOY', `Successfully deployed ${data.length} commands!`);
+
         data.forEach((cmd, i) => {
-            console.log(`   ${i + 1}. /${cmd.name} - ${cmd.description}`);
+            logger.info('DEPLOY', `  ${i + 1}. /${cmd.name} - ${cmd.description}`);
         });
-        
     } catch (error) {
-        console.error('\n❌ Deployment failed:', error.message);
+        logger.error('DEPLOY', 'Deployment failed', error.message);
         if (error.rawError) {
-            console.error('Details:', JSON.stringify(error.rawError, null, 2));
+            logger.error('DEPLOY', 'Details', JSON.stringify(error.rawError, null, 2));
         }
         process.exit(1);
     }

@@ -98,6 +98,17 @@ export async function getRoutineById(id, userId = null) {
 }
 
 /**
+ * Get a routine by id if the user is owner or participant (for DM/IA access).
+ */
+export async function getRoutineByIdForUser(id, userId) {
+    const routine = await Routine.findOne({ _id: id }).lean();
+    if (!routine) return null;
+    const isOwner = routine.userId === userId;
+    const isParticipant = Array.isArray(routine.participantIds) && routine.participantIds.includes(userId);
+    return isOwner || isParticipant ? routine : null;
+}
+
+/**
  * Update a routine. Se cron ou timezone mudarem e houver scheduleId, recria o schedule no EventBridge.
  * Rotina desativada (uma vez já executada) ao ser editada volta a ficar ativa e ganha schedule de novo.
  * @param {string} id - Routine ID
@@ -304,6 +315,7 @@ export default {
     createRoutine,
     getRoutinesByUser,
     getRoutineById,
+    getRoutineByIdForUser,
     updateRoutine,
     deleteRoutine,
     leaveRoutineForUser,
