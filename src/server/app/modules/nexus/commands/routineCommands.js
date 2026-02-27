@@ -85,6 +85,59 @@ function timezoneToLabel(tz) {
     return found ? found.name : tz.split('/').pop()?.replace(/_/g, ' ') ?? tz;
 }
 
+/**
+ * Formato único de exibição de uma rotina (listar e mensagem de sucesso ao criar).
+ * @param {object} routine - Documento da rotina (name, cron, timezone, items, oneTime, userId, participantIds, _id, enabled, scheduleId)
+ * @param {string} userId - ID do usuário que está vendo (para dono/participante e links)
+ * @param {object} [opts] - { baseUrl?, index?, isDesativada? }
+ * @returns {string} Bloco de texto no mesmo formato dos itens da lista
+ */
+function formatRoutineBlock(routine, userId, opts = {}) {
+    const baseUrl = opts.baseUrl ?? (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
+    const index = opts.index ?? 1;
+    const isDesativada = opts.isDesativada ?? (routine.enabled === false);
+    const editPath = (id) => `/routines/${id}/edit?userId=${userId}`;
+    const deletePath = (id) => `/routines/${id}/delete?userId=${userId}`;
+
+    const { horario, repetir } = cronToHuman(routine.cron);
+    const repetirLabel = routine.oneTime ? 'Uma vez só' : repetir;
+    const fuso = timezoneToLabel(routine.timezone);
+    const itens = (routine.items || []).length;
+    const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
+    const isOwner = routine.userId === userId;
+    const isParticipant = Array.isArray(routine.participantIds) && routine.participantIds.includes(userId);
+    const roleLine = isOwner
+        ? '├ 👤 Dono: você'
+        : (isParticipant ? '├ 👥 Você foi incluído nesta rotina por outro usuário' : null);
+    let actionsLine = null;
+    if (baseUrl) {
+        if (isOwner) {
+            actionsLine = `└ ✏️ [Editar](${baseUrl}${editPath(routine._id)})  ·  🗑️ [Apagar](${baseUrl}${deletePath(routine._id)})`;
+        } else if (isParticipant) {
+            const leavePath = `/routines/${routine._id}/leave?userId=${userId}`;
+            actionsLine = `└ 🚪 [Sair desta rotina](${baseUrl}${leavePath})`;
+        }
+    } else {
+        if (isOwner) {
+            actionsLine = `└ ✏️ \`${editPath(routine._id)}\`  ·  🗑️ \`${deletePath(routine._id)}\``;
+        } else if (isParticipant) {
+            const leavePath = `/routines/${routine._id}/leave?userId=${userId}`;
+            actionsLine = `└ 🚪 \`${leavePath}\``;
+        }
+    }
+    const title = isDesativada ? `**~~${index}. ${routine.name}~~**` : `**${index}. ${routine.name}**`;
+    return [
+        title,
+        `├ 🕐 ${horario}  ·  ${repetirLabel}`,
+        `├ 🌍 ${fuso}  ·  ${itensStr}`,
+        roleLine,
+        routine.oneTime ? '└ ⏰ Uma vez só' : null,
+        routine.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
+        routine.scheduleId ? '└ ⏰ Agendada' : null,
+        actionsLine
+    ].filter(Boolean).join('\n');
+}
+
 /** Máximo de opções de usuário no slash (Discord limita 25 opções por comando; temos 6 fixas). */
 const MAX_PARTICIPANT_OPTIONS = 10;
 
@@ -296,35 +349,22 @@ export const rotinaCriarCommand = {
 
             const useForm = !name && !horario && !repetir;
             if (useForm) {
-                const embed = new EmbedBuilder()
-                    .setTitle('📝 Criar rotina')
+                const embedRepetir = new EmbedBuilder()
+                    .setTitle('📅 Em quais dias repete?')
                     .setColor(0x5865F2)
-                    .setDescription('Clique no botão e depois escolha **em quais dias** a rotina repete. Em seguida preencha nome e horário no formulário.')
+                    .setDescription('Escolha uma opção no menu abaixo. Se for "Vários dias", no próximo passo você informa quais (ex: segunda, sexta).')
                     .setTimestamp();
-                const btn = new ButtonBuilder()
-                    .setCustomId(ROTINA_CRIAR_OPEN_FORM_BUTTON_ID)
-                    .setLabel('Abrir formulário')
-                    .setStyle(ButtonStyle.Primary);
-                const row = new ActionRowBuilder().addComponents(btn);
-                const message = await interaction.editReply({ embeds: [embed], components: [row], fetchReply: true });
+                const select = new StringSelectMenuBuilder()
+                    .setCustomId(ROTINA_CRIAR_SELECT_REPETIR_ID)
+                    .setPlaceholder('Selecione…')
+                    .addOptions(REPETIR_CHOICES_FORM.map(c => ({ label: c.name, value: c.value })));
+                const message = await interaction.editReply({ embeds: [embedRepetir], components: [new ActionRowBuilder().addComponents(select)], fetchReply: true });
                 const collector = message.createMessageComponentCollector({
                     filter: (i) => i.user.id === userId,
                     time: 5 * 60 * 1000
                 });
                 collector.on('collect', async (i) => {
                     try {
-                        if (i.isButton() && i.customId === ROTINA_CRIAR_OPEN_FORM_BUTTON_ID) {
-                            const embedRepetir = new EmbedBuilder()
-                                .setTitle('📅 Em quais dias repete?')
-                                .setColor(0x5865F2)
-                                .setDescription('Escolha uma opção no menu abaixo. Se for "Vários dias", no próximo passo você informa quais (ex: segunda, sexta).')
-                                .setTimestamp();
-                            const select = new StringSelectMenuBuilder()
-                                .setCustomId(ROTINA_CRIAR_SELECT_REPETIR_ID)
-                                .setPlaceholder('Selecione…')
-                                .addOptions(REPETIR_CHOICES_FORM.map(c => ({ label: c.name, value: c.value })));
-                            await i.update({ embeds: [embedRepetir], components: [new ActionRowBuilder().addComponents(select)] });
-                        }
                         if (i.isStringSelectMenu() && i.customId === ROTINA_CRIAR_SELECT_REPETIR_ID) {
                             const repetirValue = i.values[0];
                             const embedOnce = new EmbedBuilder()
@@ -404,23 +444,15 @@ export const rotinaCriarCommand = {
                 await userPreferenceService.saveTimezone(userId, timezone);
             }
 
-            const repetirLabel = repetir === 'varios_dias'
-                ? formatDiasLabel(diasOpt?.trim() || 'segunda, sexta')
-                : (REPETIR_CHOICES.find(c => c.value === repetir)?.name ?? repetir);
+            const block = formatRoutineBlock(routine, userId, { index: 1, isDesativada: false });
             const embed = new EmbedBuilder()
                 .setTitle('✅ Rotina criada')
                 .setColor(0x57F287)
-                .addFields(
-                    { name: 'Nome', value: routine.name, inline: true },
-                    { name: 'Horário', value: horario, inline: true },
-                    { name: 'Repetir', value: repetirLabel, inline: true },
-                    { name: 'Fuso', value: routine.timezone, inline: true }
-                )
+                .setDescription(block)
                 .setTimestamp();
-
             let footerText = 'Fase 1: agendamento concluído';
             if (timezoneOpt) {
-                footerText = `💡 Seu fuso "${timezoneToLabel(timezoneOpt)}" foi salvo nas preferências. Na próxima rotina não será preciso escolher de novo.`;
+                footerText = `💡 Seu fuso "${timezoneToLabel(timezoneOpt)}" foi salvo nas preferências.`;
             }
             embed.setFooter({ text: footerText });
 
@@ -543,16 +575,11 @@ function attachConcluirCollector(message, userId) {
                 participantIds: d.participantIds || []
             });
             rotinaCriarDrafts.delete(userId);
-            const repetirLabelDone = d.oneTime ? 'Uma vez só' : (d.repetir === 'varios_dias' ? formatDiasLabel(d.diasOpt) : (REPETIR_CHOICES.find(c => c.value === d.repetir)?.name ?? d.repetir));
+            const block = formatRoutineBlock(routine, userId, { index: 1, isDesativada: false });
             const doneEmbed = new EmbedBuilder()
                 .setTitle('✅ Rotina criada')
                 .setColor(0x57F287)
-                .addFields(
-                    { name: 'Nome', value: routine.name, inline: true },
-                    { name: 'Horário', value: d.horario, inline: true },
-                    { name: 'Repetir', value: repetirLabelDone, inline: true },
-                    { name: 'Fuso', value: routine.timezone, inline: true }
-                )
+                .setDescription(block)
                 .setFooter({ text: 'Criada pelo formulário.' })
                 .setTimestamp();
             await i.update({ embeds: [doneEmbed], components: [] });
@@ -744,48 +771,6 @@ export const rotinaListarCommand = {
             }
 
             const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
-            const editPath = (id) => `/routines/${id}/edit?userId=${userId}`;
-            const deletePath = (id) => `/routines/${id}/delete?userId=${userId}`;
-
-            const makeBlock = (r, index, isDesativada) => {
-                const { horario, repetir } = cronToHuman(r.cron);
-                const repetirLabel = r.oneTime ? 'Uma vez só' : repetir;
-                const fuso = timezoneToLabel(r.timezone);
-                const itens = (r.items || []).length;
-                const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
-                const isOwner = r.userId === userId;
-                const isParticipant = Array.isArray(r.participantIds) && r.participantIds.includes(userId);
-                const roleLine = isOwner
-                    ? '├ 👤 Dono: você'
-                    : (isParticipant ? '├ 👥 Você foi incluído nesta rotina por outro usuário' : null);
-                let actionsLine = null;
-                if (baseUrl) {
-                    if (isOwner) {
-                        actionsLine = `└ ✏️ [Editar](${baseUrl}${editPath(r._id)})  ·  🗑️ [Apagar](${baseUrl}${deletePath(r._id)})`;
-                    } else if (isParticipant) {
-                        const leavePath = `/routines/${r._id}/leave?userId=${userId}`;
-                        actionsLine = `└ 🚪 [Sair desta rotina](${baseUrl}${leavePath})`;
-                    }
-                } else {
-                    if (isOwner) {
-                        actionsLine = `└ ✏️ \`${editPath(r._id)}\`  ·  🗑️ \`${deletePath(r._id)}\``;
-                    } else if (isParticipant) {
-                        const leavePath = `/routines/${r._id}/leave?userId=${userId}`;
-                        actionsLine = `└ 🚪 \`${leavePath}\``;
-                    }
-                }
-                const title = isDesativada ? `**~~${index}. ${r.name}~~**` : `**${index}. ${r.name}**`;
-                return [
-                    title,
-                    `├ 🕐 ${horario}  ·  ${repetirLabel}`,
-                    `├ 🌍 ${fuso}  ·  ${itensStr}`,
-                    roleLine,
-                    r.oneTime ? '└ ⏰ Uma vez só' : null,
-                    r.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
-                    r.scheduleId ? '└ ⏰ Agendada' : null,
-                    actionsLine
-                ].filter(Boolean).join('\n');
-            };
 
             const active = routines.filter(r => r.enabled !== false);
             const desativadas = routines.filter(r => r.enabled === false);
@@ -804,7 +789,7 @@ export const rotinaListarCommand = {
                 const page = Math.min(Math.max(state.page, 1), totalPages);
                 const start = (page - 1) * PAGE_SIZE;
                 const pageItems = filtered.slice(start, start + PAGE_SIZE);
-                const blocks = pageItems.map((r, i) => makeBlock(r, start + i + 1, r.enabled === false));
+                const blocks = pageItems.map((r, i) => formatRoutineBlock(r, userId, { baseUrl, index: start + i + 1, isDesativada: r.enabled === false }));
                 const description = blocks.length > 0 ? blocks.join('\n\n') : 'Nenhuma rotina com este filtro.';
                 const statusLabel = state.status === 'ativas' ? 'Ativas' : state.status === 'desativadas' ? 'Desativadas' : 'Todas';
                 const embed = new EmbedBuilder()
