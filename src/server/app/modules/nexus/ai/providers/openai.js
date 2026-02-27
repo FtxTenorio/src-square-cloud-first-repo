@@ -48,7 +48,7 @@ export async function generateResponse(content, personality, history = [], optio
     const systemBase = personality?.systemPrompt
         ? `${personality.systemPrompt} Responda em português brasileiro. Seja conciso (máximo 2-3 frases para respostas simples).`
         : 'Você é um assistente amigável. Responda em português brasileiro.';
-    const systemContent = `${systemBase}\n\nContexto: as mensagens abaixo são as últimas do canal (formato [Nome]: mensagem). Use esse contexto para responder de forma coerente ao que está sendo dito no chat.\n\nIMPORTANTE: Na sua resposta, NÃO use o formato [Nome]: ou [Bot]:. Responda apenas com o texto da Frieren, direto, sem prefixos nem citações de outras mensagens.`;
+    const systemContent = `${systemBase}\n\nContexto: as mensagens abaixo são as últimas do canal (formato [Nome]: mensagem). Use esse contexto para responder de forma coerente ao que está sendo dito no chat.\n\nIMPORTANTE:. Responda apenas com o texto da Frieren, direto, sem prefixos nem citações de outras mensagens.`;
 
     // Histórico do canal: últimas 50 mensagens (todos os usuários + bot), com [Nome]: mensagem
     const historyMessages = history.slice(-HISTORY_LIMIT).map(h => ({

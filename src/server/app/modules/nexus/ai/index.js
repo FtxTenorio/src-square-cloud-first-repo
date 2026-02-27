@@ -82,6 +82,7 @@ export async function generateResponse(message, history = [], options = {}) {
     const channelId = message.channel?.id || message.channelId || 'unknown';
     const guildId = message.guild?.id || message.guildId || null;
     const content = (message.content || '').trim();
+    const contentLower = content.toLowerCase();
     
     // 1. Analyze mood (só IA a cada 10 msgs; sem transição)
     const moodResult = await moodEngine.analyzeMood(channelId, content, { guildId });
@@ -103,14 +104,19 @@ export async function generateResponse(message, history = [], options = {}) {
     updateContext(userId, channelId, content);
     
     // 2. Try pattern matching first (fastest)
-    const patternMatch = matchPattern(content, moodResult.mood);
-    if (patternMatch.matched) {
-        logger.debug('AI', `Pattern match: ${patternMatch.patternId}`);
-        
-        return {
-            content: patternMatch.response,
-            moodResult
-        };
+    // Mas se for DM e o usuário estiver falando de rotinas, pulamos patterns para deixar a IA usar as tools de rotina.
+    const isDM = guildId == null;
+    const shouldSkipPatternsForRoutines = isDM && /rotina/.test(contentLower);
+    if (!shouldSkipPatternsForRoutines) {
+        const patternMatch = matchPattern(content, moodResult.mood);
+        if (patternMatch.matched) {
+            logger.debug('AI', `Pattern match: ${patternMatch.patternId}`);
+            
+            return {
+                content: patternMatch.response,
+                moodResult
+            };
+        }
     }
     
     // 3. Try OpenAI if configured (model/tokens/temperature vêm de AppConfig + ServerConfig por guildId)
@@ -119,7 +125,6 @@ export async function generateResponse(message, history = [], options = {}) {
             let aiConfig = await getOpenAIConfig(guildId);
 
             // Overrides por usuário em DM (admin.dm* nas preferências)
-            const isDM = guildId == null;
             if (isDM) {
                 try {
                     const prefs = await userPreferenceService.getPreferences(userId);
