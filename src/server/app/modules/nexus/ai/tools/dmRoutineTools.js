@@ -37,6 +37,41 @@ export const DM_ROUTINE_TOOLS = [
     {
         type: 'function',
         function: {
+            name: 'create_routine',
+            description: 'Cria uma nova rotina para o usuário em DM. Use quando o usuário pedir para criar uma rotina com nome, horário (cron), timezone e itens.',
+            parameters: {
+                type: 'object',
+                properties: {
+                    name: { type: 'string', description: 'Nome da rotina' },
+                    cron: { type: 'string', description: 'Expressão cron completa, ex: 0 8 * * 1-5' },
+                    timezone: { type: 'string', description: 'Fuso horário IANA, ex: America/Sao_Paulo' },
+                    items: {
+                        type: 'array',
+                        description: 'Lista de itens: [{ label: string, condition?: string }]',
+                        items: {
+                            type: 'object',
+                            properties: {
+                                label: { type: 'string' },
+                                condition: { type: 'string' }
+                            },
+                            required: ['label']
+                        }
+                    },
+                    oneTime: { type: 'boolean', description: 'Se true, rotina executa uma vez só' },
+                    participantIds: {
+                        type: 'array',
+                        description: 'Lista de IDs de usuários participantes (opcional)',
+                        items: { type: 'string' }
+                    }
+                },
+                required: ['name', 'cron', 'timezone'],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: 'function',
+        function: {
             name: 'update_routine',
             description: 'Atualiza uma rotina existente. Apenas o dono pode atualizar. Pode alterar nome, horário (cron), timezone, itens (array de {label, condition}), oneTime.',
             parameters: {
@@ -117,6 +152,55 @@ function formatRoutineDetailForHistory(routine) {
 export async function executeDmRoutineTool(userId, name, args = {}, context = {}) {
     try {
         switch (name) {
+            case 'create_routine': {
+                const nameArg = args.name;
+                const cron = args.cron;
+                const timezone = args.timezone;
+                if (!nameArg || !cron || !timezone) {
+                    return JSON.stringify({ error: 'name, cron e timezone são obrigatórios para create_routine.' });
+                }
+                let statusMsg = null;
+                if (context?.message) {
+                    statusMsg = await context.message.reply({
+                        content: '⏳ Frieren está criando uma nova rotina para você...',
+                    }).catch(() => null);
+                }
+                const payload = {
+                    userId,
+                    guildId: null,
+                    name: String(nameArg),
+                    cron: String(cron),
+                    timezone: String(timezone),
+                    items: Array.isArray(args.items) ? args.items : [],
+                    oneTime: Boolean(args.oneTime),
+                    participantIds: Array.isArray(args.participantIds) ? args.participantIds : []
+                };
+                const routine = await routineService.createRoutine(payload);
+                if (context?.message) {
+                    const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
+                    const data = buildDetailEmbedData(routine.toObject?.() || routine, userId, { baseUrl });
+                    const embed = new EmbedBuilder()
+                        .setTitle(data.title)
+                        .setColor(data.color)
+                        .setDescription(data.description)
+                        .addFields(data.fields)
+                        .setTimestamp();
+                    await context.message.reply({ embeds: [embed] });
+                    if (typeof context.saveToolInfo === 'function') {
+                        const content = `[Rotina criada - estado atual para futuras edições]\n${formatRoutineDetailForHistory(routine.toObject?.() || routine)}`;
+                        await context.saveToolInfo({ toolType: 'get_routine', content });
+                    }
+                }
+                if (statusMsg) {
+                    try {
+                        await statusMsg.edit('✅ Rotina criada.');
+                        setTimeout(() => {
+                            statusMsg.delete().catch(() => {});
+                        }, 4000);
+                    } catch {}
+                }
+                return JSON.stringify({ ok: true, message: `Rotina "${routine.name}" criada.` });
+            }
             case 'list_routines': {
                 const routines = await routineService.getRoutinesByUser(userId, null);
                 if (routines.length === 0) return 'Nenhuma rotina encontrada.';
