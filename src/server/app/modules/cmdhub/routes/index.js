@@ -1,13 +1,27 @@
 /**
  * cmdhub - Routes
- * HTTP routes for command management API and routines (Life-Sync)
+ * HTTP routes for command management API, routines (Life-Sync) e settings.
  */
 
 import commandController from '../controllers/commandController.js';
 import * as routineController from '../controllers/routineController.js';
+import * as settingsController from '../controllers/settingsController.js';
 import logger from '../../nexus/utils/logger.js';
 
 async function commandRoutes(fastify, options) {
+    // ═══════════════════════════════════════════════════════════
+    // SETTINGS – por usuário, sistema (com acesso), admin (só admin)
+    // ═══════════════════════════════════════════════════════════
+    fastify.get('/settings/options', settingsController.getSettingsOptions);
+    fastify.get('/settings/discord/guilds', settingsController.getDiscordGuilds);
+    fastify.get('/settings/discord/guild-members', settingsController.getDiscordGuildMembers);
+    fastify.get('/user-preferences/:userId', settingsController.getUserPreferences);
+    fastify.put('/user-preferences/:userId', settingsController.putUserPreferences);
+    fastify.get('/settings/server', settingsController.getServerConfig);
+    fastify.put('/settings/server', settingsController.putServerConfig);
+    fastify.get('/settings/admin', settingsController.getAdminConfig);
+    fastify.patch('/settings/admin', settingsController.patchAdminConfig);
+
     // ═══════════════════════════════════════════════════════════
     // ROUTINES (Life-Sync) – apagar, editar, schedule EventBridge
     // ═══════════════════════════════════════════════════════════
@@ -67,6 +81,10 @@ async function commandRoutes(fastify, options) {
     
     // Log registered routes
     logger.info('CMDHUB', '📡 Rotas HTTP registradas:');
+    logger.info('CMDHUB', '   GET    /settings/options');
+    logger.info('CMDHUB', '   GET/PUT /user-preferences/:userId');
+    logger.info('CMDHUB', '   GET/PUT /settings/server');
+    logger.info('CMDHUB', '   GET/PATCH /settings/admin');
     logger.info('CMDHUB', '   DELETE /routines/:id');
     logger.info('CMDHUB', '   GET    /routines/:id/delete');
     logger.info('CMDHUB', '   GET    /routines/:id/edit');

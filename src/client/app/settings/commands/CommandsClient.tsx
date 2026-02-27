@@ -42,6 +42,11 @@ type OnlyOnDiscordItem = {
   description: string;
 };
 
+type DiscordGuild = {
+  id: string;
+  name: string;
+};
+
 export default function CommandsClient() {
   const base = getApiUrl();
   const [commands, setCommands] = useState<Command[]>([]);
@@ -78,6 +83,8 @@ export default function CommandsClient() {
   const [onlyOnDiscord, setOnlyOnDiscord] = useState<OnlyOnDiscordItem[]>([]);
   const [deletedCommands, setDeletedCommands] = useState<Command[]>([]);
   const [restoreConfirm, setRestoreConfirm] = useState<Command | null>(null);
+  const [guilds, setGuilds] = useState<DiscordGuild[]>([]);
+  const [loadingGuilds, setLoadingGuilds] = useState(false);
 
   const scopeGuildId = scope === "global" ? null : guildId || null;
 
@@ -155,6 +162,24 @@ export default function CommandsClient() {
 
   useEffect(() => {
     fetchRateLimit();
+  }, []);
+
+  const fetchGuilds = async () => {
+    setLoadingGuilds(true);
+    try {
+      const res = await fetch(`${base}/settings/discord/guilds`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error ?? "Falha ao carregar servidores");
+      setGuilds(json.data ?? []);
+    } catch {
+      setGuilds([]);
+    } finally {
+      setLoadingGuilds(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchGuilds();
   }, []);
 
   useEffect(() => {
@@ -495,7 +520,11 @@ export default function CommandsClient() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-white mb-6">Commands</h1>
+      <h1 className="text-2xl font-bold text-white mb-2">Commands</h1>
+      <p className="text-zinc-400 text-sm mb-6">
+        Gerencie os slash commands, escopos (global/guild) e deploys. Use o escopo \"Guild\" para ver/aplicar comandos
+        específicos de um servidor. Você pode selecionar o servidor pelo nome em um dropdown.
+      </p>
 
       {error && (
         <div className="mb-4 rounded-lg border border-red-800 bg-red-950/50 px-4 py-2 text-red-300 text-sm">
@@ -547,23 +576,45 @@ export default function CommandsClient() {
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4 items-center">
-        <span className="text-zinc-500 text-sm">Scope:</span>
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "global" | "guild")}
-          className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200"
-        >
-          <option value="global">Global</option>
-          <option value="guild">Guild (servidor)</option>
-        </select>
+        <div className="flex items-center gap-2">
+          <span className="text-zinc-500 text-sm">Scope:</span>
+          <select
+            value={scope}
+            onChange={(e) => setScope(e.target.value as "global" | "guild")}
+            className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200"
+          >
+            <option value="global">Global</option>
+            <option value="guild">Guild (servidor)</option>
+          </select>
+        </div>
         {scope === "guild" && (
-          <input
-            type="text"
-            placeholder="Guild ID"
-            value={guildId}
-            onChange={(e) => setGuildId(e.target.value)}
-            className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 w-56"
-          />
+          <div className="flex flex-col gap-2">
+            <select
+              value={guildId}
+              onChange={(e) => setGuildId(e.target.value)}
+              className="rounded-md border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-200 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-64"
+            >
+              <option value="">
+                {loadingGuilds
+                  ? "Carregando servidores…"
+                  : guilds.length === 0
+                  ? "Nenhum servidor encontrado"
+                  : "Selecione um servidor"}
+              </option>
+              {guilds.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name} ({g.id})
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Ou digite o Guild ID manualmente"
+              value={guildId}
+              onChange={(e) => setGuildId(e.target.value)}
+              className="rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-xs text-zinc-300 placeholder:text-zinc-500 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-64"
+            />
+          </div>
         )}
         <select
           value={filterCategory}
