@@ -92,12 +92,18 @@ export async function generateResponse(message, history = [], options = {}) {
     const effectiveSlug = moodResult.mood !== 'friendly' ? moodResult.mood : (chatPersonality?.slug || 'friendly');
     let personality = await personalityService.getForAI(effectiveSlug);
 
-    // Deixar explícito para a IA que se trata do campo humor (quando veio do mood)
-    if (moodResult.mood !== 'friendly' && effectiveSlug === moodResult.mood && personality?.systemPrompt) {
-        personality = {
-            ...personality,
-            systemPrompt: `[Campo humor: ${moodResult.mood}]. O humor atual da Frieren é "${moodResult.mood}". Você deve responder mantendo este humor.\n\n${personality.systemPrompt}`
-        };
+    // Forçar modo analista em DMs, independentemente do humor/canal
+    const isDM = guildId == null;
+    if (isDM) {
+        personality = await personalityService.getForAI('analista');
+    } else {
+        // Deixar explícito para a IA que se trata do campo humor (quando veio do mood)
+        if (moodResult.mood !== 'friendly' && effectiveSlug === moodResult.mood && personality?.systemPrompt) {
+            personality = {
+                ...personality,
+                systemPrompt: `[Campo humor: ${moodResult.mood}]. O humor atual da Frieren é "${moodResult.mood}". Você deve responder mantendo este humor.\n\n${personality.systemPrompt}`
+            };
+        }
     }
 
     // Update context
@@ -105,7 +111,6 @@ export async function generateResponse(message, history = [], options = {}) {
     
     // 2. Try pattern matching first (fastest)
     // Mas se for DM e o usuário estiver falando de rotinas, pulamos patterns para deixar a IA usar as tools de rotina.
-    const isDM = guildId == null;
     const shouldSkipPatternsForRoutines = isDM && /rotina/.test(contentLower);
     if (!shouldSkipPatternsForRoutines) {
         const patternMatch = matchPattern(content, moodResult.mood);
