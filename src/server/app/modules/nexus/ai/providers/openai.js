@@ -131,7 +131,7 @@ export async function generateResponseWithTools(content, personality, history = 
         ? `${personality.systemPrompt} Responda em português brasileiro. Seja concisa.`
         : 'Você é um assistente amigável. Responda em português brasileiro.';
     const systemContent = tools?.length
-        ? `${systemBase}\n\nVocê tem acesso a ferramentas para listar, ver detalhes, atualizar e apagar rotinas. Quando usar list_routines ou get_routine, o resultado já foi enviado ao usuário em um embed no Discord. Nesse caso, responda APENAS com uma frase curta (ex: "Pronto!", "Aqui estão.") — NÃO repita lista, blocos (├ └), nomes de rotinas nem horários. Para update/delete, confirme em uma frase.`
+        ? `${systemBase}\n\nVocê tem acesso a ferramentas para criar, listar, ver detalhes, atualizar e apagar rotinas (create_routine, list_routines, get_routine, update_routine, delete_routine). Quando usar list_routines ou get_routine, o resultado já foi enviado ao usuário em um embed no Discord. Nesse caso, responda APENAS com uma frase curta (ex: "Pronto!", "Aqui estão.") — NÃO repita lista, blocos (├ └), nomes de rotinas nem horários. Para create/update/delete, confirme em uma frase.`
         : systemBase;
     const systemWithContext = `${systemContent}\n\nContexto: as mensagens abaixo são as últimas da conversa. NÃO use formato [Nome]: na sua resposta; responda direto como Frieren.`;
 
