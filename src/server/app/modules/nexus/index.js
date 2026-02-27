@@ -23,6 +23,12 @@ import logger from './utils/logger.js';
 
 // External modules
 import cmdhub from '../cmdhub/index.js';
+import {
+    handleRotinaCriarModalSubmit,
+    handleRotinaCriarItemModalSubmit,
+    buildRotinaCriarItemModal,
+    ROTINA_CRIAR_ADD_ITEM_BTN_ID
+} from './commands/routineCommands.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -211,11 +217,43 @@ function setupCoreEvents(client, options) {
     
     // Slash command handler
     client.on(Events.InteractionCreate, async (interaction) => {
-        // Handle buttons
-        if (interaction.isButton()) {
-            return; // Let collectors handle buttons
+        // Modal submit (formulários enviados pelo usuário)
+        if (interaction.isModalSubmit()) {
+            try {
+                if (interaction.customId?.startsWith('rotina_criar_modal:')) {
+                    await handleRotinaCriarModalSubmit(interaction);
+                } else if (interaction.customId === 'rotina_criar_item_modal') {
+                    await handleRotinaCriarItemModalSubmit(interaction);
+                }
+            } catch (err) {
+                logger.error('NEXUS', `Erro ao processar modal ${interaction.customId}: ${err.message}`);
+                const msg = { content: '❌ Erro ao processar o formulário.', ephemeral: true };
+                if (interaction.replied || interaction.deferred) {
+                    await interaction.followUp(msg).catch(() => {});
+                } else {
+                    await interaction.reply(msg).catch(() => {});
+                }
+            }
+            return;
         }
-        
+
+        // Botão "Adicionar item" da rotina: responder no global para evitar "Unknown interaction"
+        // (collector em mensagem efêmera às vezes não recebe o clique a tempo)
+        if (interaction.isButton() && interaction.customId === ROTINA_CRIAR_ADD_ITEM_BTN_ID) {
+            try {
+                await interaction.showModal(buildRotinaCriarItemModal());
+            } catch (err) {
+                logger.error('NEXUS', `Erro ao abrir modal Adicionar item: ${err.message}`);
+                await interaction.reply({ content: 'Não foi possível abrir o formulário. Tente de novo.', ephemeral: true }).catch(() => {});
+            }
+            return;
+        }
+
+        // Outros botões: collectors nos comandos tratam
+        if (interaction.isButton()) {
+            return;
+        }
+
         // Handle slash commands
         if (!interaction.isChatInputCommand()) return;
         

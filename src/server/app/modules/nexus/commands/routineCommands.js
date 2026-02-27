@@ -4,7 +4,17 @@
  * Data is stored in the events module (MongoDB); later: AWS EventBridge + Redis.
  */
 
-import { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } from 'discord.js';
+import {
+    SlashCommandBuilder,
+    EmbedBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    StringSelectMenuBuilder,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle
+} from 'discord.js';
 import * as routineService from '../../events/services/routineService.js';
 import * as userPreferenceService from '../../events/services/userPreferenceService.js';
 import logger from '../utils/logger.js';
@@ -80,15 +90,15 @@ function buildRotinaCriarData() {
         .addStringOption(o => o
             .setName('nome')
             .setDescription('Nome da rotina (ex: Check-out de Saída)')
-            .setRequired(true))
+            .setRequired(false))
         .addStringOption(o => o
             .setName('horario')
             .setDescription('Horário (ex: 08:00 ou 8:30)')
-            .setRequired(true))
+            .setRequired(false))
         .addStringOption(o => o
             .setName('repetir')
             .setDescription('Em quais dias repetir')
-            .setRequired(true)
+            .setRequired(false)
             .addChoices(...REPETIR_CHOICES))
         .addStringOption(o => o
             .setName('itens')
@@ -112,6 +122,92 @@ function buildRotinaCriarData() {
     return builder;
 }
 
+const ROTINA_CRIAR_MODAL_PREFIX = 'rotina_criar_modal:';
+const ROTINA_CRIAR_ITEM_MODAL_ID = 'rotina_criar_item_modal';
+const ROTINA_CRIAR_OPEN_FORM_BUTTON_ID = 'rotina_criar_open_form';
+const ROTINA_CRIAR_SELECT_REPETIR_ID = 'rotina_criar_select_repetir';
+/** Tratado no Nexus (handler global) para evitar "Unknown interaction" em mensagem efêmera */
+export const ROTINA_CRIAR_ADD_ITEM_BTN_ID = 'rotina_criar_add_item';
+const ROTINA_CRIAR_CONCLUIR_BTN_ID = 'rotina_criar_concluir';
+
+/** Draft em memória por userId (nome, horario, repetir, dias, timezone, items[], messageId, channelId) */
+const rotinaCriarDrafts = new Map();
+
+/**
+ * Modal principal: Nome, Horário e (se repetir === varios_dias) Dias.
+ * Repetir já foi escolhido no dropdown.
+ */
+function buildRotinaCriarModal(repetir) {
+    const isVariosDias = repetir === 'varios_dias';
+    const customId = ROTINA_CRIAR_MODAL_PREFIX + repetir;
+
+    const nome = new TextInputBuilder()
+        .setCustomId('rotina_criar_nome')
+        .setLabel('Nome da rotina')
+        .setPlaceholder('Ex: Check-out de Saída')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(100);
+    const horario = new TextInputBuilder()
+        .setCustomId('rotina_criar_horario')
+        .setLabel('Horário')
+        .setPlaceholder('HH:MM — ex: 08:00 ou 14:30')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+    const rows = [
+        new ActionRowBuilder().addComponents(nome),
+        new ActionRowBuilder().addComponents(horario)
+    ];
+    if (isVariosDias) {
+        const dias = new TextInputBuilder()
+            .setCustomId('rotina_criar_dias')
+            .setLabel('Quais dias?')
+            .setPlaceholder('Ex: segunda, sexta ou segunda, terça, quinta')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true);
+        rows.push(new ActionRowBuilder().addComponents(dias));
+    }
+    return new ModalBuilder()
+        .setCustomId(customId)
+        .setTitle('Nova rotina')
+        .addComponents(...rows);
+}
+
+/** Modal para adicionar um item à lista (label + condição). Exportado para o Nexus abrir no handler global. */
+export function buildRotinaCriarItemModal() {
+    const label = new TextInputBuilder()
+        .setCustomId('rotina_item_label')
+        .setLabel('Nome do item')
+        .setPlaceholder('Ex: Fechar a janela')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true)
+        .setMaxLength(200);
+    const condition = new TextInputBuilder()
+        .setCustomId('rotina_item_condition')
+        .setLabel('Condição (opcional)')
+        .setPlaceholder('always ou deixe em branco')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(false);
+    return new ModalBuilder()
+        .setCustomId(ROTINA_CRIAR_ITEM_MODAL_ID)
+        .setTitle('Adicionar item')
+        .addComponents(
+            new ActionRowBuilder().addComponents(label),
+            new ActionRowBuilder().addComponents(condition)
+        );
+}
+
+/** Normaliza valor de repetir (para slash/fallback) */
+function normalizeRepetirValue(input) {
+    const v = (input || '').trim().toLowerCase().replace(/\s+/g, '_');
+    const byValue = REPETIR_CHOICES.find(c => c.value === v);
+    if (byValue) return byValue.value;
+    const byName = REPETIR_CHOICES.find(c => c.name.toLowerCase().replace(/\s+/g, '_').includes(v) || v.includes(c.value));
+    if (byName) return byName.value;
+    if (v.includes(',')) return 'varios_dias';
+    return v || 'todo_dia';
+}
+
 export const rotinaCriarCommand = {
     data: buildRotinaCriarData(),
     async execute(interaction) {
@@ -124,10 +220,61 @@ export const rotinaCriarCommand = {
             const repetir = interaction.options.getString('repetir');
             const diasOpt = interaction.options.getString('dias');
             const timezoneOpt = interaction.options.getString('timezone');
+            const itensStr = interaction.options.getString('itens');
+
+            const useForm = !name && !horario && !repetir;
+            if (useForm) {
+                const embed = new EmbedBuilder()
+                    .setTitle('📝 Criar rotina')
+                    .setColor(0x5865F2)
+                    .setDescription('Clique no botão e depois escolha **em quais dias** a rotina repete. Em seguida preencha nome e horário no formulário.')
+                    .setTimestamp();
+                const btn = new ButtonBuilder()
+                    .setCustomId(ROTINA_CRIAR_OPEN_FORM_BUTTON_ID)
+                    .setLabel('Abrir formulário')
+                    .setStyle(ButtonStyle.Primary);
+                const row = new ActionRowBuilder().addComponents(btn);
+                const message = await interaction.editReply({ embeds: [embed], components: [row], fetchReply: true });
+                const collector = message.createMessageComponentCollector({
+                    filter: (i) => i.user.id === userId,
+                    time: 5 * 60 * 1000
+                });
+                collector.on('collect', async (i) => {
+                    try {
+                        if (i.isButton() && i.customId === ROTINA_CRIAR_OPEN_FORM_BUTTON_ID) {
+                            const embedRepetir = new EmbedBuilder()
+                                .setTitle('📅 Em quais dias repete?')
+                                .setColor(0x5865F2)
+                                .setDescription('Escolha uma opção no menu abaixo. Se for "Vários dias", no próximo passo você informa quais (ex: segunda, sexta).')
+                                .setTimestamp();
+                            const select = new StringSelectMenuBuilder()
+                                .setCustomId(ROTINA_CRIAR_SELECT_REPETIR_ID)
+                                .setPlaceholder('Selecione…')
+                                .addOptions(REPETIR_CHOICES.map(c => ({ label: c.name, value: c.value })));
+                            await i.update({ embeds: [embedRepetir], components: [new ActionRowBuilder().addComponents(select)] });
+                        }
+                        if (i.isStringSelectMenu() && i.customId === ROTINA_CRIAR_SELECT_REPETIR_ID) {
+                            const repetirValue = i.values[0];
+                            await i.showModal(buildRotinaCriarModal(repetirValue));
+                        }
+                    } catch (e) {
+                        logger.error('CMD', 'rotina_criar form collect', e.message);
+                    }
+                });
+                return;
+            }
+
+            if (!name || !horario || !repetir) {
+                await interaction.editReply({
+                    content: 'Para criar pela linha de comando, informe **nome**, **horário** e **repetir**. Ou use o comando sem parâmetros e clique em "Abrir formulário".',
+                    ephemeral: true
+                }).catch(() => {});
+                return;
+            }
+
             const locale = interaction.locale || interaction.guildLocale || 'en-GB';
             const savedTimezone = await userPreferenceService.getTimezone(userId);
             const timezone = timezoneOpt || savedTimezone || routineService.getTimezoneFromLocale(locale);
-            const itensStr = interaction.options.getString('itens');
             const items = routineService.parseItemsString(itensStr || '');
 
             const participantIds = [];
@@ -199,6 +346,179 @@ export const rotinaCriarCommand = {
         }
     }
 };
+
+/**
+ * Handler para quando o usuário envia o modal "Nova rotina" (nome + horário [+ dias]).
+ * Repetir vem do customId. Cria draft e mostra etapa "Adicionar itens" com botões.
+ */
+export async function handleRotinaCriarModalSubmit(interaction) {
+    await interaction.deferReply({ ephemeral: true });
+    try {
+        const userId = interaction.user.id;
+        const guildId = interaction.guild?.id ?? null;
+        const customId = interaction.customId || '';
+        const repetir = customId.startsWith(ROTINA_CRIAR_MODAL_PREFIX)
+            ? customId.slice(ROTINA_CRIAR_MODAL_PREFIX.length)
+            : 'todo_dia';
+        const name = (interaction.fields.getTextInputValue('rotina_criar_nome') || '').trim();
+        const horario = (interaction.fields.getTextInputValue('rotina_criar_horario') || '').trim();
+        const diasOpt = repetir === 'varios_dias'
+            ? (interaction.fields.getTextInputValue('rotina_criar_dias') || '').trim()
+            : '';
+
+        if (!name || !horario) {
+            await interaction.editReply({ content: 'Preencha **Nome** e **Horário**.' }).catch(() => {});
+            return;
+        }
+        if (repetir === 'varios_dias' && !diasOpt) {
+            await interaction.editReply({ content: 'Para "Vários dias", preencha o campo **Quais dias?** (ex: segunda, sexta).' }).catch(() => {});
+            return;
+        }
+
+        const locale = interaction.locale || interaction.guildLocale || 'en-GB';
+        const savedTimezone = await userPreferenceService.getTimezone(userId);
+        const timezone = savedTimezone || routineService.getTimezoneFromLocale(locale);
+        const repetirForCron = repetir === 'varios_dias' ? (diasOpt || 'segunda, sexta') : repetir;
+        const repetirLabel = repetir === 'varios_dias'
+            ? formatDiasLabel(diasOpt)
+            : (REPETIR_CHOICES.find(c => c.value === repetir)?.name ?? repetir);
+
+        const draft = {
+            userId,
+            guildId,
+            name,
+            horario,
+            repetir,
+            diasOpt,
+            timezone,
+            items: [],
+            messageId: null,
+            channelId: null
+        };
+        rotinaCriarDrafts.set(userId, draft);
+
+        const { embed, row } = buildDraftEmbedAndRow(draft);
+        const message = await interaction.editReply({ embeds: [embed], components: [row], fetchReply: true });
+        draft.messageId = message.id;
+        draft.channelId = message.channelId;
+        attachConcluirCollector(message, userId);
+    } catch (err) {
+        logger.error('CMD', 'rotina_criar_modal', err.message || String(err), { stack: err?.stack });
+        await interaction.editReply({
+            content: `Erro ao criar rotina: ${err.message}`,
+            ephemeral: true
+        }).catch(() => {});
+    }
+}
+
+/**
+ * Cria collector de "Concluir" numa mensagem do draft (evita duplicar lógica).
+ */
+function attachConcluirCollector(message, userId) {
+    const collector = message.createMessageComponentCollector({
+        filter: (i) => i.user.id === userId,
+        time: 5 * 60 * 1000
+    });
+    collector.on('collect', async (i) => {
+        try {
+            if (i.customId !== ROTINA_CRIAR_CONCLUIR_BTN_ID) return;
+            const d = rotinaCriarDrafts.get(userId);
+            if (!d) {
+                await i.update({ content: 'Este rascunho expirou. Use `/rotina_criar` de novo.', components: [] }).catch(() => {});
+                return;
+            }
+            const cron = routineService.scheduleToCron(d.horario, d.repetir === 'varios_dias' ? (d.diasOpt || 'segunda, sexta') : d.repetir);
+            const oneTime = d.repetir === 'uma_vez';
+            const routine = await routineService.createRoutine({
+                userId: d.userId,
+                guildId: d.guildId,
+                name: d.name,
+                cron,
+                timezone: d.timezone,
+                items: d.items,
+                oneTime,
+                participantIds: []
+            });
+            rotinaCriarDrafts.delete(userId);
+            const repetirLabelDone = d.repetir === 'varios_dias' ? formatDiasLabel(d.diasOpt) : (REPETIR_CHOICES.find(c => c.value === d.repetir)?.name ?? d.repetir);
+            const doneEmbed = new EmbedBuilder()
+                .setTitle('✅ Rotina criada')
+                .setColor(0x57F287)
+                .addFields(
+                    { name: 'Nome', value: routine.name, inline: true },
+                    { name: 'Horário', value: d.horario, inline: true },
+                    { name: 'Repetir', value: repetirLabelDone, inline: true },
+                    { name: 'Fuso', value: routine.timezone, inline: true }
+                )
+                .setFooter({ text: 'Criada pelo formulário.' })
+                .setTimestamp();
+            await i.update({ embeds: [doneEmbed], components: [] });
+        } catch (e) {
+            logger.error('CMD', 'rotina_criar concluir', e.message);
+            await i.reply({ content: `Erro: ${e.message}`, ephemeral: true }).catch(() => {});
+        }
+    });
+}
+
+/**
+ * Monta embed + row dos botões do draft (reutilizado no modal submit e no item modal submit).
+ */
+function buildDraftEmbedAndRow(draft) {
+    const itemsList = draft.items.length === 0 ? '_Nenhum item ainda._' : draft.items.map((it, i) => `${i + 1}. ${it.label} \`(${it.condition || 'always'})\``).join('\n');
+    const repetirLabel = draft.repetir === 'varios_dias' ? formatDiasLabel(draft.diasOpt) : (REPETIR_CHOICES.find(c => c.value === draft.repetir)?.name ?? draft.repetir);
+    const embed = new EmbedBuilder()
+        .setTitle('📋 Dados da rotina')
+        .setColor(0x5865F2)
+        .addFields(
+            { name: 'Nome', value: draft.name, inline: true },
+            { name: 'Horário', value: draft.horario, inline: true },
+            { name: 'Repetir', value: repetirLabel, inline: true },
+            { name: 'Itens', value: itemsList, inline: false }
+        )
+        .setFooter({ text: 'Adicione mais itens (opcional) e clique em Concluir.' })
+        .setTimestamp();
+    const addBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_ADD_ITEM_BTN_ID).setLabel('➕ Adicionar item').setStyle(ButtonStyle.Secondary);
+    const concluirBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_CONCLUIR_BTN_ID).setLabel('✅ Concluir').setStyle(ButtonStyle.Success);
+    const row = new ActionRowBuilder().addComponents(addBtn, concluirBtn);
+    return { embed, row };
+}
+
+/**
+ * Handler para quando o usuário envia o modal "Adicionar item".
+ * Mensagens efêmeras não podem ser buscadas/editadas (Unknown Message), então
+ * respondemos com o painel atualizado e criamos collector na nova mensagem.
+ */
+export async function handleRotinaCriarItemModalSubmit(interaction) {
+    try {
+        const userId = interaction.user.id;
+        const draft = rotinaCriarDrafts.get(userId);
+        if (!draft) {
+            await interaction.reply({ content: 'Rascunho expirado. Use `/rotina_criar` e preencha de novo.', ephemeral: true }).catch(() => {});
+            return;
+        }
+        const label = (interaction.fields.getTextInputValue('rotina_item_label') || '').trim();
+        const condition = (interaction.fields.getTextInputValue('rotina_item_condition') || '').trim() || 'always';
+        if (!label) {
+            await interaction.reply({ content: 'Informe o nome do item.', ephemeral: true }).catch(() => {});
+            return;
+        }
+        draft.items.push({ label, condition });
+        const { embed, row } = buildDraftEmbedAndRow(draft);
+        const message = await interaction.reply({
+            content: `✅ Item "${label.slice(0, 50)}${label.length > 50 ? '…' : ''}" adicionado. Abaixo a lista atualizada.`,
+            embeds: [embed],
+            components: [row],
+            ephemeral: true,
+            fetchReply: true
+        });
+        draft.messageId = message.id;
+        draft.channelId = message.channelId;
+        attachConcluirCollector(message, userId);
+    } catch (err) {
+        logger.error('CMD', 'rotina_criar_item_modal', err.message || String(err), { stack: err?.stack });
+        await interaction.reply({ content: `Erro: ${err.message}`, ephemeral: true }).catch(() => {});
+    }
+}
 
 const PAGE_SIZE = 5;
 const LIST_COLLECTOR_TIME_MS = 5 * 60 * 1000; // 5 min
@@ -273,7 +593,7 @@ export const rotinaListarCommand = {
             const active = routines.filter(r => r.enabled !== false);
             const desativadas = routines.filter(r => r.enabled === false);
 
-            const state = { page: 1, status: 'todas', view: 'list' };
+            const state = { page: 1, status: 'ativas', view: 'list' };
 
             function getFiltered() {
                 if (state.status === 'ativas') return active;
@@ -401,9 +721,9 @@ export const rotinaListarCommand = {
                         }
                         if (i.customId === 'rotina_listar:filter') {
                             state.page = 1;
-                            if (state.status === 'todas') state.status = 'ativas';
-                            else if (state.status === 'ativas') state.status = 'desativadas';
-                            else state.status = 'todas';
+                            if (state.status === 'ativas') state.status = 'desativadas';
+                            else if (state.status === 'desativadas') state.status = 'todas';
+                            else state.status = 'ativas';
                             const { embed, components } = buildListEmbedAndComponents();
                             await i.update({ embeds: [embed], components });
                             return;
