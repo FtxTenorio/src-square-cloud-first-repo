@@ -6,6 +6,7 @@
 
 import { EmbedBuilder } from 'discord.js';
 import * as routineService from '../../../events/services/routineService.js';
+import * as userPreferenceService from '../../../events/services/userPreferenceService.js';
 import { buildListEmbedData, buildDetailEmbedData, cronToHuman } from '../../commands/routineFormatters.js';
 import logger from '../../utils/logger.js';
 
@@ -54,13 +55,12 @@ export const DM_ROUTINE_TOOLS = [
         type: 'function',
         function: {
             name: 'create_routine',
-            description: 'Cria uma nova rotina para o usuário em DM. Use quando o usuário pedir para criar uma rotina com nome, horário (cron), timezone e itens.',
+            description: 'Cria uma nova rotina para o usuário em DM. Use quando o usuário pedir para criar uma rotina com nome, horário (cron) e itens. O fuso é inferido das preferências do usuário (timezone salvo) ou padrão (como no comando /rotina_criar).',
             parameters: {
                 type: 'object',
                 properties: {
                     name: { type: 'string', description: 'Nome da rotina' },
                     cron: { type: 'string', description: 'Expressão cron completa, ex: 0 8 * * 1-5' },
-                    timezone: { type: 'string', description: 'Fuso horário IANA, ex: America/Sao_Paulo' },
                     items: {
                         type: 'array',
                         description: 'Lista de itens: [{ label: string, condition?: string }]',
@@ -80,7 +80,7 @@ export const DM_ROUTINE_TOOLS = [
                         items: { type: 'string' }
                     }
                 },
-                required: ['name', 'cron', 'timezone'],
+                required: ['name', 'cron'],
                 additionalProperties: false
             }
         }
@@ -172,9 +172,8 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
             case 'create_routine': {
                 const nameArg = args.name;
                 const cron = args.cron;
-                const timezone = args.timezone;
-                if (!nameArg || !cron || !timezone) {
-                    return JSON.stringify({ error: 'name, cron e timezone são obrigatórios para create_routine.' });
+                if (!nameArg || !cron) {
+                    return JSON.stringify({ error: 'name e cron são obrigatórios para create_routine.' });
                 }
                 let statusMsg = null;
                 if (context?.message) {
@@ -182,6 +181,11 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                         content: '⏳ Frieren está criando uma nova rotina para você...',
                     }).catch(() => null);
                 }
+                // Fuso horário: igual ao comando /rotina_criar → prefere prefs do usuário, senão mapeia por locale padrão.
+                // Em DM não temos locale do Discord com facilidade aqui, então usamos 'en-GB' como fallback neutro.
+                const savedTimezone = await userPreferenceService.getTimezone(userId);
+                const timezone = savedTimezone || routineService.getTimezoneFromLocale('en-GB');
+
                 const payload = {
                     userId,
                     guildId: null,
