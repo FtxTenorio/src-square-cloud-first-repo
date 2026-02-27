@@ -131,49 +131,53 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Editar rotina</title>
 </head>
-<body style="margin:0; background: #f8fafc; font-family: system-ui, -apple-system, sans-serif;">
-  <div style="max-width: 480px; margin: 2rem auto; padding: 1.5rem; background: #fff; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); text-align: left;">
-    <h1 style="font-size: 1.25rem; margin: 0 0 1rem;">✏️ Editar rotina</h1>
+<body style="margin:0; background: #020617; color: #e5e7eb; font-family: system-ui, -apple-system, sans-serif;">
+  <div style="max-width: 520px; margin: 2.5rem auto; padding: 1.75rem; background: #020617; border-radius: 12px; box-shadow: 0 20px 45px rgba(15,23,42,0.8); text-align: left; border: 1px solid #1e293b;">
+    <h1 style="font-size: 1.4rem; font-weight: 600; margin: 0 0 0.75rem; color: #e5e7eb;">✏️ Editar rotina</h1>
+    <p style="margin: 0 0 1.25rem; font-size: 0.9rem; color: #9ca3af;">
+      Ajuste o horário, repetição, fuso e itens da rotina. As alterações passam a valer já no próximo disparo.
+    </p>
     <form id="form-edit" method="post" action="${escapeHtml(actionUrl)}" autocomplete="off" style="display: flex; flex-direction: column; gap: 1rem;">
       <input type="hidden" name="userId" value="${escapeHtml(userId)}">
       <input type="hidden" name="itens" id="itens-value" value="">
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
-        <span style="font-weight: 500;">Nome</span>
-        <input type="text" name="name" value="${name}" required maxlength="100" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <span style="font-weight: 500; font-size: 0.85rem; color: #cbd5f5;">Nome</span>
+        <input type="text" name="name" value="${name}" required maxlength="100" autocomplete="off" style="padding: 0.5rem 0.75rem; border: 1px solid #1f2937; border-radius: 6px; background: #020617; color: #e5e7eb; font-size: 0.9rem;">
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
-        <span style="font-weight: 500;">Horário</span>
-        <input type="time" name="horario" value="${horario}" required autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+        <span style="font-weight: 500; font-size: 0.85rem; color: #cbd5f5;">Horário</span>
+        <input type="time" name="horario" value="${horario}" required autocomplete="off" style="padding: 0.5rem 0.75rem; border: 1px solid #1f2937; border-radius: 6px; background: #020617; color: #e5e7eb; font-size: 0.9rem;">
       </label>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
-        <span style="font-weight: 500;">Repetir</span>
-        <select name="repetir" id="repetir-select" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${repetirOptions}</select>
+        <span style="font-weight: 500; font-size: 0.85rem; color: #cbd5f5;">Repetir</span>
+        <select name="repetir" id="repetir-select" autocomplete="off" style="padding: 0.5rem 0.75rem; border: 1px solid #1f2937; border-radius: 6px; background: #020617; color: #e5e7eb; font-size: 0.9rem;">${repetirOptions}</select>
       </label>
       <div id="dias-wrap" style="display: ${repetir === 'varios_dias' ? 'block' : 'none'};">
         <label style="display: flex; flex-direction: column; gap: 0.25rem;">
-          <span style="font-weight: 500;">Quais dias? (separados por vírgula)</span>
-          <input type="text" name="dias" value="${diasValue}" placeholder="segunda, sexta ou segunda, terça, quinta, domingo" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">
+          <span style="font-weight: 500; font-size: 0.85rem; color: #cbd5f5;">Quais dias? (separados por vírgula)</span>
+          <input type="text" name="dias" value="${diasValue}" placeholder="segunda, sexta ou segunda, terça, quinta, domingo" autocomplete="off" style="padding: 0.5rem 0.75rem; border: 1px solid #1f2937; border-radius: 6px; background: #020617; color: #e5e7eb; font-size: 0.9rem;">
         </label>
       </div>
       <label style="display: flex; flex-direction: column; gap: 0.25rem;">
-        <span style="font-weight: 500;">Fuso</span>
-        <select name="timezone" autocomplete="off" style="padding: 0.5rem; border: 1px solid #e2e8f0; border-radius: 4px;">${timezoneOptions}</select>
+        <span style="font-weight: 500; font-size: 0.85rem; color: #cbd5f5;">Fuso</span>
+        <select name="timezone" autocomplete="off" style="padding: 0.5rem 0.75rem; border: 1px solid #1f2937; border-radius: 6px; background: #020617; color: #e5e7eb; font-size: 0.9rem;">${timezoneOptions}</select>
       </label>
       <div class="itens-wrap" style="margin: 0;">
-        <p style="font-weight: 500; margin: 0 0 0.5rem;">Quer adicionar itens à rotina?</p>
-        <button type="button" id="btn-show-itens" style="padding: 0.5rem 0.75rem; background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; border-radius: 4px; cursor: pointer; font-size: 0.875rem;" ${hasInitialItems ? ' hidden' : ''}>+ Adicionar itens</button>
+        <p style="font-weight: 500; margin: 0 0 0.5rem; font-size: 0.9rem; color: #e5e7eb;">Itens da rotina</p>
+        <p style="margin: 0 0 0.35rem; font-size: 0.75rem; color: #9ca3af;">Cada item é um passo do checklist. Você pode marcar condições especiais depois.</p>
+        <button type="button" id="btn-show-itens" style="padding: 0.45rem 0.75rem; background: #020617; color: #e5e7eb; border: 1px solid #374151; border-radius: 6px; cursor: pointer; font-size: 0.8rem;" ${hasInitialItems ? ' hidden' : ''}>+ Adicionar itens</button>
         <div id="itens-section" style="margin-top: 0.5rem; ${hasInitialItems ? '' : 'display: none;'}">
           <div id="itens-rows">${initialRows}</div>
-          <button type="button" id="btn-add-row" style="padding: 0.35rem 0.6rem; margin-top: 0.25rem; background: #e0e7ff; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 4px; cursor: pointer; font-size: 1rem;">+</button>
+          <button type="button" id="btn-add-row" style="padding: 0.35rem 0.6rem; margin-top: 0.25rem; background: #1d2449; color: #e5e7eb; border: 1px solid #4f46e5; border-radius: 999px; cursor: pointer; font-size: 0.9rem;">+ Item</button>
         </div>
       </div>
       <label style="display: flex; align-items: center; gap: 0.5rem;">
-        <input type="checkbox" name="oneTime" value="1"${oneTimeChecked}>
-        <span>Uma vez só (não repetir)</span>
+        <input type="checkbox" name="oneTime" value="1"${oneTimeChecked} style="accent-color:#4f46e5;">
+        <span style="font-size: 0.9rem; color: #e5e7eb;">Uma vez só (não repetir)</span>
       </label>
-      <div style="display: flex; gap: 0.5rem;">
-        <button type="submit" style="padding: 0.5rem 1rem; background: #5865F2; color: #fff; border: none; border-radius: 4px; cursor: pointer;">Salvar</button>
-        <a href="${escapeHtml(actionUrl)}" style="padding: 0.5rem 1rem; color: #64748b;">Cancelar</a>
+      <div style="display: flex; gap: 0.5rem; align-items: center;">
+        <button type="submit" style="padding: 0.55rem 1.2rem; background: #5865F2; color: #fff; border: none; border-radius: 999px; cursor: pointer; font-size: 0.9rem; font-weight: 500;">Salvar</button>
+        <a href="${escapeHtml(actionUrl)}" style="padding: 0.45rem 0.75rem; color: #9ca3af; font-size: 0.8rem; text-decoration: none;">Cancelar</a>
       </div>
     </form>
   </div>
