@@ -66,14 +66,18 @@ export async function generateResponse(content, personality, history = [], optio
         { role: 'user', content: currentContent }
     ];
     
+    const model = options.model || DEFAULT_MODEL;
+    const maxTokens = options.maxTokens ?? MAX_TOKENS;
+    const temperature = options.temperature ?? TEMPERATURE;
+
     try {
-        logger.ai.request('openai', DEFAULT_MODEL);
-        
+        logger.ai.request('openai', model);
+
         const { data } = await axios.post(OPENAI_API_URL, {
-            model: options.model || DEFAULT_MODEL,
+            model,
             messages,
-            max_tokens: options.maxTokens || MAX_TOKENS,
-            temperature: options.temperature || TEMPERATURE
+            max_tokens: maxTokens,
+            temperature
         }, {
             headers: {
                 'Content-Type': 'application/json',

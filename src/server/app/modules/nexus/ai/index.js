@@ -10,6 +10,34 @@ import * as openai from './providers/openai.js';
 import moodEngine from './moodEngine.js';
 import * as chatService from '../services/chatService.js';
 import * as personalityService from '../services/personalityService.js';
+import AppConfig from '../../cmdhub/models/AppConfig.js';
+import ServerConfig from '../../cmdhub/models/ServerConfig.js';
+
+const AI_CONFIG_DEFAULTS = { model: 'gpt-4o-mini', maxTokens: 500, temperature: 0.8 };
+
+/**
+ * Carrega config de OpenAI: por guild (ServerConfig) sobrescreve global (AppConfig).
+ * @param {string|null} guildId - Guild do canal; se null usa só AppConfig.
+ * @returns {Promise<{ model, maxTokens, temperature }>}
+ */
+async function getOpenAIConfig(guildId) {
+    const out = { ...AI_CONFIG_DEFAULTS };
+    let app = await AppConfig.findOne({ _id: 'app' }).lean();
+    if (app) {
+        if (app.aiModel) out.model = app.aiModel;
+        if (app.aiMaxTokens != null) out.maxTokens = app.aiMaxTokens;
+        if (app.aiTemperature != null) out.temperature = app.aiTemperature;
+    }
+    if (guildId) {
+        const server = await ServerConfig.findOne({ guildId }).lean();
+        if (server) {
+            if (server.aiModel != null && server.aiModel !== '') out.model = server.aiModel;
+            if (server.aiMaxTokens != null) out.maxTokens = server.aiMaxTokens;
+            if (server.aiTemperature != null) out.temperature = server.aiTemperature;
+        }
+    }
+    return out;
+}
 
 // Conversation context storage
 const conversationContext = new Map();
@@ -83,13 +111,17 @@ export async function generateResponse(message, history = [], options = {}) {
         };
     }
     
-    // 3. Try OpenAI if configured
+    // 3. Try OpenAI if configured (model/tokens/temperature vêm de AppConfig + ServerConfig por guildId)
     if (openai.isConfigured()) {
         try {
+            const aiConfig = await getOpenAIConfig(guildId);
             const result = await openai.generateResponse(content, personality, history, {
-                currentUsername: message.author?.username
+                currentUsername: message.author?.username,
+                model: aiConfig.model,
+                maxTokens: aiConfig.maxTokens,
+                temperature: aiConfig.temperature
             });
-            
+
             return {
                 content: result.content,
                 moodResult

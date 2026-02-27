@@ -70,7 +70,10 @@ export async function getServerConfig(request, reply) {
             rateLimitWindowMs: getConfig('rateLimit.commands.windowMs') ?? 60 * 1000,
             rateLimitMax: getConfig('rateLimit.commands.maxRequests') ?? 10,
             timezoneDefault: null,
-            locale: null
+            locale: null,
+            aiModel: null,
+            aiTemperature: null,
+            aiMaxTokens: null
         };
         return { success: true, data: doc ? { ...defaults, ...doc } : defaults };
     } catch (err) {
@@ -83,7 +86,7 @@ export async function getServerConfig(request, reply) {
 export async function putServerConfig(request, reply) {
     try {
         const body = request.body || {};
-        const { guildId, modLogChannelId, xpEnabled, rateLimitWindowMs, rateLimitMax, timezoneDefault, locale } = body;
+        const { guildId, modLogChannelId, xpEnabled, rateLimitWindowMs, rateLimitMax, timezoneDefault, locale, aiModel, aiTemperature, aiMaxTokens } = body;
         if (!guildId) {
             reply.status(400);
             return { success: false, error: 'guildId é obrigatório' };
@@ -95,6 +98,9 @@ export async function putServerConfig(request, reply) {
         if (rateLimitMax !== undefined) update.rateLimitMax = Number(rateLimitMax) || 10;
         if (timezoneDefault !== undefined) update.timezoneDefault = timezoneDefault ? String(timezoneDefault).trim() : null;
         if (locale !== undefined) update.locale = locale ? String(locale).trim() : null;
+        if (aiModel !== undefined) update.aiModel = aiModel ? String(aiModel).trim() : null;
+        if (aiTemperature !== undefined) update.aiTemperature = aiTemperature == null ? null : Math.max(0, Math.min(2, Number(aiTemperature) || 0.8));
+        if (aiMaxTokens !== undefined) update.aiMaxTokens = aiMaxTokens == null ? null : Math.max(1, Math.min(4096, Number(aiMaxTokens) || 500));
 
         const doc = await ServerConfig.findOneAndUpdate(
             { guildId },
