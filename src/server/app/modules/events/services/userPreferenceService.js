@@ -37,6 +37,36 @@ export async function saveTimezone(userId, timezone) {
 }
 
 /**
+ * Salva configurações de IA em DM nas preferências do usuário (admin.dm*).
+ * Todos os campos são opcionais; quando null/undefined, o campo é limpo (usa config global).
+ * @param {string} userId
+ * @param {{ dmModel?: string | null, dmTemperature?: number | null, dmMaxTokens?: number | null }} admin
+ */
+export async function saveAdminDmAIConfig(userId, admin = {}) {
+    if (!userId || !admin || typeof admin !== 'object') return null;
+    const update = {};
+    if ('dmModel' in admin) {
+        update['admin.dmModel'] = admin.dmModel && String(admin.dmModel).trim() ? String(admin.dmModel).trim() : null;
+    }
+    if ('dmTemperature' in admin) {
+        const v = admin.dmTemperature;
+        update['admin.dmTemperature'] = v === null || v === undefined ? null : Number(v);
+    }
+    if ('dmMaxTokens' in admin) {
+        const v = admin.dmMaxTokens;
+        update['admin.dmMaxTokens'] = v === null || v === undefined ? null : Number(v);
+    }
+    if (Object.keys(update).length === 0) return null;
+    const doc = await UserPreference.findOneAndUpdate(
+        { userId },
+        { $set: update },
+        { new: true, upsert: true }
+    );
+    logger.info('EVENTS', `Preferência admin.dm* salva para ${userId}`, update);
+    return doc;
+}
+
+/**
  * Retorna todas as preferências do usuário.
  * @param {string} userId - Discord user ID
  */
@@ -48,5 +78,6 @@ export async function getPreferences(userId) {
 export default {
     getTimezone,
     saveTimezone,
+    saveAdminDmAIConfig,
     getPreferences
 };

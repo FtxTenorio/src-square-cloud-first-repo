@@ -22,7 +22,16 @@ export async function getUserPreferences(request, reply) {
             return { success: false, error: 'userId é obrigatório' };
         }
         const prefs = await userPreferenceService.getPreferences(userId);
-        return { success: true, data: prefs || { userId, timezone: null } };
+        const base = {
+            userId,
+            timezone: null,
+            admin: {
+                dmModel: null,
+                dmTemperature: null,
+                dmMaxTokens: null
+            }
+        };
+        return { success: true, data: prefs ? { ...base, ...prefs, admin: { ...base.admin, ...(prefs.admin || {}) } } : base };
     } catch (err) {
         logger.error('CMDHUB', 'getUserPreferences', err.message);
         reply.status(500);
@@ -38,12 +47,24 @@ export async function putUserPreferences(request, reply) {
             reply.status(400);
             return { success: false, error: 'userId é obrigatório' };
         }
-        const { timezone } = body;
+        const { timezone, admin } = body;
         if (timezone !== undefined && timezone !== null) {
             await userPreferenceService.saveTimezone(userId, String(timezone).trim() || null);
         }
+        if (admin !== undefined && admin !== null) {
+            await userPreferenceService.saveAdminDmAIConfig(userId, admin);
+        }
         const prefs = await userPreferenceService.getPreferences(userId);
-        return { success: true, data: prefs || { userId, timezone: null } };
+        const base = {
+            userId,
+            timezone: null,
+            admin: {
+                dmModel: null,
+                dmTemperature: null,
+                dmMaxTokens: null
+            }
+        };
+        return { success: true, data: prefs ? { ...base, ...prefs, admin: { ...base.admin, ...(prefs.admin || {}) } } : base };
     } catch (err) {
         logger.error('CMDHUB', 'putUserPreferences', err.message);
         reply.status(500);

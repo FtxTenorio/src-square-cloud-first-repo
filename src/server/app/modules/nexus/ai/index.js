@@ -13,6 +13,7 @@ import * as personalityService from '../services/personalityService.js';
 import AppConfig from '../../cmdhub/models/AppConfig.js';
 import ServerConfig from '../../cmdhub/models/ServerConfig.js';
 import { DM_ROUTINE_TOOLS, executeDmRoutineTool } from './tools/dmRoutineTools.js';
+import * as userPreferenceService from '../../events/services/userPreferenceService.js';
 
 const AI_CONFIG_DEFAULTS = { model: 'gpt-4o-mini', maxTokens: 500, temperature: 0.8 };
 
@@ -115,7 +116,22 @@ export async function generateResponse(message, history = [], options = {}) {
     // 3. Try OpenAI if configured (model/tokens/temperature vêm de AppConfig + ServerConfig por guildId)
     if (openai.isConfigured()) {
         try {
-            const aiConfig = await getOpenAIConfig(guildId);
+            let aiConfig = await getOpenAIConfig(guildId);
+
+            // Overrides por usuário em DM (admin.dm* nas preferências)
+            const isDM = guildId == null;
+            if (isDM) {
+                try {
+                    const prefs = await userPreferenceService.getPreferences(userId);
+                    const admin = prefs?.admin || {};
+                    if (admin.dmModel) aiConfig.model = admin.dmModel;
+                    if (admin.dmMaxTokens != null) aiConfig.maxTokens = admin.dmMaxTokens;
+                    if (admin.dmTemperature != null) aiConfig.temperature = admin.dmTemperature;
+                } catch (e) {
+                    logger.warn('AI', `Erro ao carregar prefs admin.dm* para ${userId}: ${e.message}`);
+                }
+            }
+
             const baseOptions = {
                 currentUsername: message.author?.username,
                 model: aiConfig.model,
@@ -124,7 +140,6 @@ export async function generateResponse(message, history = [], options = {}) {
             };
 
             // DM: habilitar funções (tools) para a IA ler e editar rotinas do usuário
-            const isDM = guildId == null;
             if (isDM) {
                 const result = await openai.generateResponseWithTools(content, personality, history, {
                     ...baseOptions,

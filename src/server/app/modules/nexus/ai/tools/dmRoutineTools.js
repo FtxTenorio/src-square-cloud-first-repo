@@ -171,10 +171,29 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                 if (args.name !== undefined) updates.name = String(args.name);
                 if (args.cron !== undefined) updates.cron = String(args.cron);
                 if (args.timezone !== undefined) updates.timezone = String(args.timezone);
-                if (args.items !== undefined) updates.items = Array.isArray(args.items) ? args.items : [];
+                // Patch semantics: só altera itens quando um array não-vazio for enviado.
+                // Isso evita que a IA envie [] sem querer e apague todos os itens.
+                if (Array.isArray(args.items) && args.items.length > 0) {
+                    updates.items = args.items;
+                }
                 if (args.oneTime !== undefined) updates.oneTime = Boolean(args.oneTime);
                 const updated = await routineService.updateRoutine(id, userId, updates);
                 if (!updated) return JSON.stringify({ error: 'Rotina não encontrada ou você não é o dono.' });
+                if (context?.message) {
+                    const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
+                    const data = buildDetailEmbedData(updated.toObject?.() || updated, userId, { baseUrl });
+                    const embed = new EmbedBuilder()
+                        .setTitle(data.title)
+                        .setColor(data.color)
+                        .setDescription(data.description)
+                        .addFields(data.fields)
+                        .setTimestamp();
+                    await context.message.reply({ embeds: [embed] });
+                    if (typeof context.saveToolInfo === 'function') {
+                        const content = `[Rotina atualizada - estado atual para futuras edições]\\n${formatRoutineDetailForHistory(updated.toObject?.() || updated)}`;
+                        await context.saveToolInfo({ toolType: 'get_routine', content });
+                    }
+                }
                 return JSON.stringify({ ok: true, message: `Rotina "${updated.name}" atualizada.` });
             }
             case 'delete_routine': {
