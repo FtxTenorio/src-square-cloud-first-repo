@@ -117,7 +117,12 @@ export function renderRoutineEditForm(routine, formData, actionUrl, userId) {
     const hasInitialItems = items.length > 0;
     const oneTimeChecked = routine.oneTime ? ' checked' : '';
 
-    const repetirOptions = REPETIR_OPTIONS.map(o => `<option value="${escapeHtml(o.value)}"${o.value === repetir ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+    // No HTML de edição, alinhado com o comando: não exibimos "Uma vez só" no dropdown,
+    // pois isso é controlado apenas pelo checkbox oneTime.
+    const repetirOptions = REPETIR_OPTIONS
+        .filter(o => o.value !== 'uma_vez')
+        .map(o => `<option value="${escapeHtml(o.value)}"${o.value === repetir ? ' selected' : ''}>${escapeHtml(o.label)}</option>`)
+        .join('');
     const timezoneOptions = TIMEZONE_OPTIONS.map(o => `<option value="${escapeHtml(o.value)}"${o.value === timezone ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
 
     const initialRows = hasInitialItems
