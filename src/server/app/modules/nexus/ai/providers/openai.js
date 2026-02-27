@@ -223,6 +223,18 @@ export async function generateResponseWithTools(content, personality, history = 
                 content: typeof result === 'string' ? result : JSON.stringify(result)
             });
         }
+
+        // Para as tools atuais (rotinas em DM), elas já enviam o card/status diretamente no Discord.
+        // Não precisamos de outra chamada ao modelo para gerar texto; respondemos nós mesmos com uma frase curta.
+        const elapsedAfterTools = Date.now() - startTime;
+        logger.ai.response(0, elapsedAfterTools);
+        return {
+            content: 'Pronto.',
+            provider: 'openai',
+            model: data.model,
+            usage: data.usage,
+            elapsed: elapsedAfterTools
+        };
     }
 
     const elapsed = Date.now() - startTime;
