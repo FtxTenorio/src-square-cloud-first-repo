@@ -9,6 +9,22 @@ import * as routineService from '../../../events/services/routineService.js';
 import { buildListEmbedData, buildDetailEmbedData, cronToHuman } from '../../commands/routineFormatters.js';
 import logger from '../../utils/logger.js';
 
+function logToolDebug(tool, message, extra = {}) {
+    logger.debug('AI', `dmRoutineTool ${tool} - ${message}`, extra);
+}
+
+function logToolError(tool, err, extra = {}) {
+    logger.error(
+        'AI',
+        `dmRoutineTool ${tool} error`,
+        {
+            message: err?.message || String(err),
+            stack: err?.stack,
+            ...extra
+        }
+    );
+}
+
 /** Definições no formato OpenAI (tools array para chat/completions). */
 export const DM_ROUTINE_TOOLS = [
     {
@@ -151,6 +167,7 @@ function formatRoutineDetailForHistory(routine) {
  */
 export async function executeDmRoutineTool(userId, name, args = {}, context = {}) {
     try {
+        logToolDebug(name, 'start', { userId, hasMessage: !!context?.message });
         switch (name) {
             case 'create_routine': {
                 const nameArg = args.name;
@@ -176,6 +193,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                     participantIds: Array.isArray(args.participantIds) ? args.participantIds : []
                 };
                 const routine = await routineService.createRoutine(payload);
+                logToolDebug('create_routine', 'routineService.createRoutine ok', { routineId: String(routine._id) });
                 if (context?.message) {
                     const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
                     const data = buildDetailEmbedData(routine.toObject?.() || routine, userId, { baseUrl });
@@ -203,6 +221,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
             }
             case 'list_routines': {
                 const routines = await routineService.getRoutinesByUser(userId, null);
+                logToolDebug('list_routines', 'getRoutinesByUser ok', { total: routines.length });
                 if (routines.length === 0) return 'Nenhuma rotina encontrada.';
                 if (context?.message) {
                     const statusMsg = await context.message.reply({
@@ -243,6 +262,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                 const id = args.routine_id;
                 if (!id) return JSON.stringify({ error: 'routine_id é obrigatório' });
                 const routine = await routineService.getRoutineByIdForUser(id, userId);
+                logToolDebug('get_routine', 'getRoutineByIdForUser ok', { found: !!routine, routineId: id });
                 if (!routine) return 'Rotina não encontrada ou você não tem acesso.';
                 if (context?.message) {
                     const statusMsg = await context.message.reply({
@@ -300,6 +320,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                     }).catch(() => null);
                 }
                 const updated = await routineService.updateRoutine(id, userId, updates);
+                logToolDebug('update_routine', 'updateRoutine ok', { routineId: id });
                 if (!updated) return JSON.stringify({ error: 'Rotina não encontrada ou você não é o dono.' });
                 if (context?.message) {
                     const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
@@ -340,6 +361,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                     }).catch(() => null);
                 }
                 const deleted = await routineService.deleteRoutine(id, userId);
+                logToolDebug('delete_routine', 'deleteRoutine ok', { routineId: id, deleted: !!deleted });
                 if (!deleted) return JSON.stringify({ error: 'Rotina não encontrada ou você não é o dono.' });
                 if (statusMsg) {
                     try {
@@ -355,7 +377,7 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                 return JSON.stringify({ error: `Função desconhecida: ${name}` });
         }
     } catch (err) {
-        logger.error('AI', `dmRoutineTool ${name}`, err.message);
+        logToolError(name, err, { userId, args });
         return JSON.stringify({ error: err.message || 'Erro ao executar.' });
     }
 }
