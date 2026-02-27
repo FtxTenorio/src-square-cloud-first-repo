@@ -74,8 +74,8 @@ export function clearContext(userId, channelId) {
 
 /**
  * Main response generator
- * Orchestrates mood analysis (IA a cada 10 msgs), pattern matching and AI providers.
- * Returns { content, moodResult }.
+ * Orquestra personalidade do chat e provedores de IA (sem mood automático nem pattern matching).
+ * Returns { content }.
  */
 export async function generateResponse(message, history = [], options = {}) {
     const userId = message.author?.id || message.userId || 'unknown';
@@ -84,47 +84,20 @@ export async function generateResponse(message, history = [], options = {}) {
     const content = (message.content || '').trim();
     const contentLower = content.toLowerCase();
     
-    // 1. Analyze mood (só IA a cada 10 msgs; sem transição)
-    const moodResult = await moodEngine.analyzeMood(channelId, content, { guildId });
-
-    // Personalidade do chat. Humor temporário (brava, chorona, sage) sobrescreve a padrão do canal
+    // Personalidade do chat (sem mood automático)
     const chatPersonality = await chatService.getChatPersonality(channelId, guildId || 'DM');
-    const effectiveSlug = moodResult.mood !== 'friendly' ? moodResult.mood : (chatPersonality?.slug || 'friendly');
-    let personality = await personalityService.getForAI(effectiveSlug);
+    let personality = await personalityService.getForAI(chatPersonality?.slug || 'friendly');
 
-    // Forçar modo analista em DMs, independentemente do humor/canal
+    // Forçar modo analista em DMs, independentemente da personalidade do canal
     const isDM = guildId == null;
     if (isDM) {
         personality = await personalityService.getForAI('analista');
-    } else {
-        // Deixar explícito para a IA que se trata do campo humor (quando veio do mood)
-        if (moodResult.mood !== 'friendly' && effectiveSlug === moodResult.mood && personality?.systemPrompt) {
-            personality = {
-                ...personality,
-                systemPrompt: `[Campo humor: ${moodResult.mood}]. O humor atual da Frieren é "${moodResult.mood}". Você deve responder mantendo este humor.\n\n${personality.systemPrompt}`
-            };
-        }
     }
 
     // Update context
     updateContext(userId, channelId, content);
     
-    // 2. Try pattern matching first (fastest)
-    // Mas se for DM e o usuário estiver falando de rotinas, pulamos patterns para deixar a IA usar as tools de rotina.
-    const shouldSkipPatternsForRoutines = isDM && /rotina/.test(contentLower);
-    if (!shouldSkipPatternsForRoutines) {
-        const patternMatch = matchPattern(content, moodResult.mood);
-        if (patternMatch.matched) {
-            logger.debug('AI', `Pattern match: ${patternMatch.patternId}`);
-            
-            return {
-                content: patternMatch.response,
-                moodResult
-            };
-        }
-    }
-    
-    // 3. Try OpenAI if configured (model/tokens/temperature vêm de AppConfig + ServerConfig por guildId)
+    // 2. Try OpenAI if configured (model/tokens/temperature vêm de AppConfig + ServerConfig por guildId)
     if (openai.isConfigured()) {
         try {
             let aiConfig = await getOpenAIConfig(guildId);
@@ -158,28 +131,19 @@ export async function generateResponse(message, history = [], options = {}) {
                     executeTool: executeDmRoutineTool,
                     messageContext: { message: options.discordMessage, saveToolInfo: options.saveToolInfo }
                 });
-                return { content: result.content, moodResult };
+                return { content: result.content };
             }
 
             const result = await openai.generateResponse(content, personality, history, baseOptions);
-            return {
-                content: result.content,
-                moodResult
-            };
+            return { content: result.content };
         } catch (error) {
             logger.ai.error(error);
-            return {
-                content: getSleepingMessage(),
-                moodResult
-            };
+            return { content: getSleepingMessage() };
         }
     }
     
-    // 4. Fallback - Frieren está dormindo
-    return {
-        content: getSleepingMessage(),
-        moodResult
-    };
+    // 3. Fallback - Frieren está dormindo
+    return { content: getSleepingMessage() };
 }
 
 /**
