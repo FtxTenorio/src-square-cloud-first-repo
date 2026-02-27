@@ -128,9 +128,14 @@ const ROTINA_CRIAR_OPEN_FORM_BUTTON_ID = 'rotina_criar_open_form';
 const ROTINA_CRIAR_SELECT_REPETIR_ID = 'rotina_criar_select_repetir';
 /** Tratado no Nexus (handler global) para evitar "Unknown interaction" em mensagem efêmera */
 export const ROTINA_CRIAR_ADD_ITEM_BTN_ID = 'rotina_criar_add_item';
+export const ROTINA_CRIAR_ADD_PARTICIPANT_BTN_ID = 'rotina_criar_add_participant';
 const ROTINA_CRIAR_CONCLUIR_BTN_ID = 'rotina_criar_concluir';
+const ROTINA_CRIAR_DESCARTAR_BTN_ID = 'rotina_criar_descartar';
+const ROTINA_CRIAR_PARTICIPANT_MODAL_ID = 'rotina_criar_participant_modal';
+/** Select menu de membros do servidor para incluir na rotina */
+export const ROTINA_CRIAR_SELECT_PARTICIPANT_ID = 'rotina_criar_select_participant';
 
-/** Draft em memória por userId (nome, horario, repetir, dias, timezone, items[], messageId, channelId) */
+/** Draft em memória por userId (nome, horario, repetir, dias, timezone, items[], participantIds[], messageId, channelId) */
 const rotinaCriarDrafts = new Map();
 
 /**
@@ -195,6 +200,68 @@ export function buildRotinaCriarItemModal() {
             new ActionRowBuilder().addComponents(label),
             new ActionRowBuilder().addComponents(condition)
         );
+}
+
+/** Modal para incluir outro usuário (só em DM ou fallback). Cole menção ou ID. */
+export function buildRotinaCriarParticipantModal() {
+    const input = new TextInputBuilder()
+        .setCustomId('rotina_participant_value')
+        .setLabel('Usuário')
+        .setPlaceholder('Cole uma menção (@usuário) ou o ID do usuário')
+        .setStyle(TextInputStyle.Short)
+        .setRequired(true);
+    return new ModalBuilder()
+        .setCustomId(ROTINA_CRIAR_PARTICIPANT_MODAL_ID)
+        .setTitle('Incluir usuário na rotina')
+        .addComponents(new ActionRowBuilder().addComponents(input));
+}
+
+/**
+ * Monta a resposta com select de membros do servidor (até 25).
+ * Usado quando o usuário clica em "Incluir usuário" dentro de um guild.
+ */
+export async function getRotinaCriarParticipantSelectPayload(interaction) {
+    const userId = interaction.user.id;
+    const draft = rotinaCriarDrafts.get(userId);
+    if (!draft) {
+        return { content: 'Rascunho expirado. Use `/rotina_criar` e preencha de novo.', ephemeral: true };
+    }
+    if (!interaction.guild) {
+        return { content: 'Use o comando em um servidor para ver a lista de membros.', ephemeral: true };
+    }
+    const existing = draft.participantIds || [];
+    let members;
+    try {
+        members = await interaction.guild.members.fetch({ limit: 100 });
+    } catch (e) {
+        logger.error('CMD', 'rotina_criar fetch members', e.message);
+        return { content: 'Não foi possível carregar os membros. Tente de novo.', ephemeral: true };
+    }
+    const filtered = members.filter(m => !m.user.bot && m.user.id !== userId && !existing.includes(m.user.id));
+    const list = Array.from(filtered.values()).slice(0, 25);
+    if (list.length === 0) {
+        return { content: 'Nenhum outro membro disponível para incluir (ou todos já foram incluídos).', ephemeral: true };
+    }
+    const options = list.map(m => ({
+        label: (m.user.username || m.user.tag || m.id).slice(0, 100),
+        value: m.user.id,
+        description: (m.displayName || '').slice(0, 100) || undefined
+    }));
+    const select = new StringSelectMenuBuilder()
+        .setCustomId(ROTINA_CRIAR_SELECT_PARTICIPANT_ID)
+        .setPlaceholder('Escolher usuário do servidor…')
+        .addOptions(options);
+    const row = new ActionRowBuilder().addComponents(select);
+    return { content: 'Selecione um usuário do servidor para incluir na rotina:', components: [row], ephemeral: true };
+}
+
+/** Extrai ID do usuário de menção <@123> / <@!123> ou string só com dígitos */
+function parseUserIdFromInput(value) {
+    const v = (value || '').trim();
+    const mentionMatch = v.match(/<@!?(\d+)>/);
+    if (mentionMatch) return mentionMatch[1];
+    if (/^\d+$/.test(v)) return v;
+    return null;
 }
 
 /** Normaliza valor de repetir (para slash/fallback) */
@@ -392,6 +459,7 @@ export async function handleRotinaCriarModalSubmit(interaction) {
             diasOpt,
             timezone,
             items: [],
+            participantIds: [],
             messageId: null,
             channelId: null
         };
@@ -421,6 +489,11 @@ function attachConcluirCollector(message, userId) {
     });
     collector.on('collect', async (i) => {
         try {
+            if (i.customId === ROTINA_CRIAR_DESCARTAR_BTN_ID) {
+                rotinaCriarDrafts.delete(userId);
+                await i.update({ content: 'Rascunho descartado. Use `/rotina_criar` para criar outra rotina.', components: [] }).catch(() => {});
+                return;
+            }
             if (i.customId !== ROTINA_CRIAR_CONCLUIR_BTN_ID) return;
             const d = rotinaCriarDrafts.get(userId);
             if (!d) {
@@ -437,7 +510,7 @@ function attachConcluirCollector(message, userId) {
                 timezone: d.timezone,
                 items: d.items,
                 oneTime,
-                participantIds: []
+                participantIds: d.participantIds || []
             });
             rotinaCriarDrafts.delete(userId);
             const repetirLabelDone = d.repetir === 'varios_dias' ? formatDiasLabel(d.diasOpt) : (REPETIR_CHOICES.find(c => c.value === d.repetir)?.name ?? d.repetir);
@@ -465,6 +538,8 @@ function attachConcluirCollector(message, userId) {
  */
 function buildDraftEmbedAndRow(draft) {
     const itemsList = draft.items.length === 0 ? '_Nenhum item ainda._' : draft.items.map((it, i) => `${i + 1}. ${it.label} \`(${it.condition || 'always'})\``).join('\n');
+    const participants = draft.participantIds || [];
+    const participantsList = participants.length === 0 ? '_Ninguém_' : participants.map(id => `<@${id}>`).join(' ');
     const repetirLabel = draft.repetir === 'varios_dias' ? formatDiasLabel(draft.diasOpt) : (REPETIR_CHOICES.find(c => c.value === draft.repetir)?.name ?? draft.repetir);
     const embed = new EmbedBuilder()
         .setTitle('📋 Dados da rotina')
@@ -473,13 +548,16 @@ function buildDraftEmbedAndRow(draft) {
             { name: 'Nome', value: draft.name, inline: true },
             { name: 'Horário', value: draft.horario, inline: true },
             { name: 'Repetir', value: repetirLabel, inline: true },
-            { name: 'Itens', value: itemsList, inline: false }
+            { name: 'Itens', value: itemsList, inline: false },
+            { name: 'Incluídos na rotina', value: participantsList, inline: false }
         )
-        .setFooter({ text: 'Adicione mais itens (opcional) e clique em Concluir.' })
+        .setFooter({ text: 'Adicione itens e usuários (opcional) e clique em Concluir.' })
         .setTimestamp();
-    const addBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_ADD_ITEM_BTN_ID).setLabel('➕ Adicionar item').setStyle(ButtonStyle.Secondary);
+    const addBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_ADD_ITEM_BTN_ID).setLabel('➕ Item').setStyle(ButtonStyle.Secondary);
+    const participantBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_ADD_PARTICIPANT_BTN_ID).setLabel('👥 Incluir usuário').setStyle(ButtonStyle.Secondary);
+    const descartarBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_DESCARTAR_BTN_ID).setLabel('🗑️ Descartar').setStyle(ButtonStyle.Danger);
     const concluirBtn = new ButtonBuilder().setCustomId(ROTINA_CRIAR_CONCLUIR_BTN_ID).setLabel('✅ Concluir').setStyle(ButtonStyle.Success);
-    const row = new ActionRowBuilder().addComponents(addBtn, concluirBtn);
+    const row = new ActionRowBuilder().addComponents(addBtn, participantBtn, descartarBtn, concluirBtn);
     return { embed, row };
 }
 
@@ -516,6 +594,93 @@ export async function handleRotinaCriarItemModalSubmit(interaction) {
         attachConcluirCollector(message, userId);
     } catch (err) {
         logger.error('CMD', 'rotina_criar_item_modal', err.message || String(err), { stack: err?.stack });
+        await interaction.reply({ content: `Erro: ${err.message}`, ephemeral: true }).catch(() => {});
+    }
+}
+
+/**
+ * Handler para quando o usuário envia o modal "Incluir usuário na rotina".
+ * Aceita menção (@usuário) ou ID. Atualiza o draft e responde com o painel atualizado.
+ */
+export async function handleRotinaCriarParticipantModalSubmit(interaction) {
+    try {
+        const userId = interaction.user.id;
+        const draft = rotinaCriarDrafts.get(userId);
+        if (!draft) {
+            await interaction.reply({ content: 'Rascunho expirado. Use `/rotina_criar` e preencha de novo.', ephemeral: true }).catch(() => {});
+            return;
+        }
+        const raw = (interaction.fields.getTextInputValue('rotina_participant_value') || '').trim();
+        const participantId = parseUserIdFromInput(raw);
+        if (!participantId) {
+            await interaction.reply({
+                content: 'Informe uma menção (@usuário) ou o ID numérico do usuário do Discord.',
+                ephemeral: true
+            }).catch(() => {});
+            return;
+        }
+        if (participantId === userId) {
+            await interaction.reply({ content: 'Você já é o dono da rotina. Inclua outro usuário.', ephemeral: true }).catch(() => {});
+            return;
+        }
+        const list = draft.participantIds || [];
+        if (list.includes(participantId)) {
+            await interaction.reply({ content: `O usuário <@${participantId}> já está incluído.`, ephemeral: true }).catch(() => {});
+            return;
+        }
+        draft.participantIds = [...list, participantId];
+        const { embed, row } = buildDraftEmbedAndRow(draft);
+        const message = await interaction.reply({
+            content: `✅ <@${participantId}> incluído na rotina.`,
+            embeds: [embed],
+            components: [row],
+            ephemeral: true,
+            fetchReply: true
+        });
+        draft.messageId = message.id;
+        draft.channelId = message.channelId;
+        attachConcluirCollector(message, userId);
+    } catch (err) {
+        logger.error('CMD', 'rotina_criar_participant_modal', err.message || String(err), { stack: err?.stack });
+        await interaction.reply({ content: `Erro: ${err.message}`, ephemeral: true }).catch(() => {});
+    }
+}
+
+/**
+ * Handler para quando o usuário escolhe alguém no select de membros do servidor.
+ */
+export async function handleRotinaCriarParticipantSelect(interaction) {
+    try {
+        const userId = interaction.user.id;
+        const draft = rotinaCriarDrafts.get(userId);
+        if (!draft) {
+            await interaction.reply({ content: 'Rascunho expirado. Use `/rotina_criar` de novo.', ephemeral: true }).catch(() => {});
+            return;
+        }
+        const participantId = interaction.values[0];
+        if (!participantId || participantId === userId) {
+            await interaction.reply({ content: 'Escolha outro usuário.', ephemeral: true }).catch(() => {});
+            return;
+        }
+        const list = draft.participantIds || [];
+        if (list.includes(participantId)) {
+            await interaction.reply({ content: `O usuário <@${participantId}> já está incluído.`, ephemeral: true }).catch(() => {});
+            return;
+        }
+        draft.participantIds = [...list, participantId];
+        const { embed, row } = buildDraftEmbedAndRow(draft);
+        const message = await interaction.reply({
+            content: `✅ <@${participantId}> incluído na rotina.`,
+            embeds: [embed],
+            components: [row],
+            ephemeral: true,
+            fetchReply: true
+        });
+        draft.messageId = message.id;
+        draft.channelId = message.channelId;
+        attachConcluirCollector(message, userId);
+    } catch (err) {
+        logger.error('CMD', 'rotina_criar_participant_select', err.message || String(err), { stack: err?.stack });
         await interaction.reply({ content: `Erro: ${err.message}`, ephemeral: true }).catch(() => {});
     }
 }

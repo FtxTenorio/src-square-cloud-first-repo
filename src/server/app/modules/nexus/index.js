@@ -26,8 +26,14 @@ import cmdhub from '../cmdhub/index.js';
 import {
     handleRotinaCriarModalSubmit,
     handleRotinaCriarItemModalSubmit,
+    handleRotinaCriarParticipantModalSubmit,
+    handleRotinaCriarParticipantSelect,
     buildRotinaCriarItemModal,
-    ROTINA_CRIAR_ADD_ITEM_BTN_ID
+    buildRotinaCriarParticipantModal,
+    getRotinaCriarParticipantSelectPayload,
+    ROTINA_CRIAR_ADD_ITEM_BTN_ID,
+    ROTINA_CRIAR_ADD_PARTICIPANT_BTN_ID,
+    ROTINA_CRIAR_SELECT_PARTICIPANT_ID
 } from './commands/routineCommands.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -224,6 +230,8 @@ function setupCoreEvents(client, options) {
                     await handleRotinaCriarModalSubmit(interaction);
                 } else if (interaction.customId === 'rotina_criar_item_modal') {
                     await handleRotinaCriarItemModalSubmit(interaction);
+                } else if (interaction.customId === 'rotina_criar_participant_modal') {
+                    await handleRotinaCriarParticipantModalSubmit(interaction);
                 }
             } catch (err) {
                 logger.error('NEXUS', `Erro ao processar modal ${interaction.customId}: ${err.message}`);
@@ -237,14 +245,38 @@ function setupCoreEvents(client, options) {
             return;
         }
 
-        // Botão "Adicionar item" da rotina: responder no global para evitar "Unknown interaction"
-        // (collector em mensagem efêmera às vezes não recebe o clique a tempo)
+        // Botões do formulário de rotina: responder no global para evitar "Unknown interaction" em ephemeral
         if (interaction.isButton() && interaction.customId === ROTINA_CRIAR_ADD_ITEM_BTN_ID) {
             try {
                 await interaction.showModal(buildRotinaCriarItemModal());
             } catch (err) {
                 logger.error('NEXUS', `Erro ao abrir modal Adicionar item: ${err.message}`);
                 await interaction.reply({ content: 'Não foi possível abrir o formulário. Tente de novo.', ephemeral: true }).catch(() => {});
+            }
+            return;
+        }
+        if (interaction.isButton() && interaction.customId === ROTINA_CRIAR_ADD_PARTICIPANT_BTN_ID) {
+            try {
+                if (interaction.guild) {
+                    const payload = await getRotinaCriarParticipantSelectPayload(interaction);
+                    await interaction.reply(payload);
+                } else {
+                    await interaction.showModal(buildRotinaCriarParticipantModal());
+                }
+            } catch (err) {
+                logger.error('NEXUS', `Erro ao abrir Incluir usuário: ${err.message}`);
+                await interaction.reply({ content: 'Não foi possível carregar. Tente de novo.', ephemeral: true }).catch(() => {});
+            }
+            return;
+        }
+
+        // Select "Incluir usuário" (membros do servidor)
+        if (interaction.isStringSelectMenu() && interaction.customId === ROTINA_CRIAR_SELECT_PARTICIPANT_ID) {
+            try {
+                await handleRotinaCriarParticipantSelect(interaction);
+            } catch (err) {
+                logger.error('NEXUS', `Erro ao processar select participante: ${err.message}`);
+                await interaction.reply({ content: 'Erro ao incluir usuário.', ephemeral: true }).catch(() => {});
             }
             return;
         }
