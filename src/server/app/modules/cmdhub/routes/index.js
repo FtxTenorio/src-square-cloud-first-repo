@@ -15,6 +15,8 @@ async function commandRoutes(fastify, options) {
     fastify.get('/routines/:id/delete', routineController.getDeleteRoutine);
     fastify.get('/routines/:id/edit', routineController.getEditRoutine);
     fastify.post('/routines/:id/edit', routineController.postEditRoutine);
+    fastify.post('/routines/:id/leave', routineController.postLeaveRoutine);
+    fastify.get('/routines/:id/leave', routineController.getLeaveRoutine);
 
     // ═══════════════════════════════════════════════════════════
     // CRUD ROUTES
@@ -69,6 +71,8 @@ async function commandRoutes(fastify, options) {
     logger.info('CMDHUB', '   GET    /routines/:id/delete');
     logger.info('CMDHUB', '   GET    /routines/:id/edit');
     logger.info('CMDHUB', '   POST   /routines/:id/edit');
+    logger.info('CMDHUB', '   POST   /routines/:id/leave');
+    logger.info('CMDHUB', '   GET    /routines/:id/leave');
     logger.info('CMDHUB', '   GET    /commands');
     logger.info('CMDHUB', '   GET    /commands/stats');
     logger.info('CMDHUB', '   GET    /commands/rate-limit');

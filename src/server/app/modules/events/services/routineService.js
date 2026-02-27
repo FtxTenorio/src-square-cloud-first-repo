@@ -10,14 +10,17 @@ import logger from '../../nexus/utils/logger.js';
 
 /**
  * Create a new routine and, se configurado, cria schedule no EventBridge.
- * @param {object} data - { userId, guildId?, name, cron, timezone, items, oneTime? }
+ * @param {object} data - { userId, guildId?, name, cron, timezone, items, oneTime?, participantIds? }
  * @returns {Promise<object>} Saved routine document (com scheduleId se criado)
  */
 export async function createRoutine(data) {
-    const { userId, guildId, name, cron, timezone, items = [], oneTime = false } = data;
+    const { userId, guildId, name, cron, timezone, items = [], oneTime = false, participantIds } = data;
     if (!userId || !name || !cron || !timezone) {
         throw new Error('userId, name, cron e timezone são obrigatórios');
     }
+    const participants = Array.isArray(participantIds)
+        ? [...new Set(participantIds.map(String).filter(id => id && id !== userId))]
+        : [];
     const routine = await Routine.create({
         userId,
         guildId: guildId ?? null,
@@ -25,7 +28,8 @@ export async function createRoutine(data) {
         cron: cron.trim(),
         timezone: (timezone || 'Europe/London').trim(),
         items: Array.isArray(items) ? items : [],
-        oneTime: Boolean(oneTime)
+        oneTime: Boolean(oneTime),
+        participantIds: participants
     });
     logger.info('EVENTS', `Rotina criada: ${routine.name} (${routine._id}) por ${userId}`);
 
@@ -44,12 +48,18 @@ export async function createRoutine(data) {
 }
 
 /**
- * List routines by user (and optional guild). Ordenado do mais antigo ao mais novo.
+ * List routines visíveis para um usuário (dono ou participante) e opcionalmente por guild.
+ * Ordenado do mais antigo ao mais novo.
  * @param {string} userId - Discord user ID
  * @param {string} [guildId] - Optional guild filter
  */
 export async function getRoutinesByUser(userId, guildId = null) {
-    const query = { userId };
+    const query = {
+        $or: [
+            { userId },
+            { participantIds: userId }
+        ]
+    };
     if (guildId != null) query.guildId = guildId;
     return Routine.find(query).sort({ createdAt: 1 }).lean();
 }
@@ -183,6 +193,26 @@ export async function deleteRoutine(id, userId) {
     return routine;
 }
 
+/**
+ * Remove um usuário da lista de participantes de uma rotina.
+ * Não permite que o dono "saia" — ele deve apagar ou editar.
+ */
+export async function leaveRoutineForUser(id, userId) {
+    const routine = await Routine.findOne({ _id: id });
+    if (!routine) return null;
+    if (routine.userId === userId) {
+        return null;
+    }
+    const current = Array.isArray(routine.participantIds) ? routine.participantIds : [];
+    if (!current.includes(userId)) {
+        return null;
+    }
+    routine.participantIds = current.filter(pid => pid !== userId);
+    await routine.save();
+    logger.info('EVENTS', `Usuário ${userId} saiu da rotina ${routine.name} (${id})`);
+    return routine;
+}
+
 const DOW_TO_CRON = { domingo: '0', segunda: '1', terca: '2', quarta: '3', quinta: '4', sexta: '5', sabado: '6' };
 const CRON_TO_DOW_LABEL = { '0': 'Domingo', '1': 'Segunda', '2': 'Terça', '3': 'Quarta', '4': 'Quinta', '5': 'Sexta', '6': 'Sábado' };
 
@@ -273,6 +303,7 @@ export default {
     getRoutineById,
     updateRoutine,
     deleteRoutine,
+    leaveRoutineForUser,
     disableRoutine,
     scheduleToCron,
     cronToRepetirValue,

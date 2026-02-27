@@ -179,6 +179,84 @@ export async function postEditRoutine(request, reply) {
     }
 }
 
+/**
+ * POST /routines/:id/leave
+ * Remove o usuário autenticado (via userId no body ou query) da lista de participantes.
+ */
+export async function postLeaveRoutine(request, reply) {
+    try {
+        const { id } = request.params;
+        const userId = request.body?.userId ?? request.query?.userId;
+        if (!id) {
+            reply.status(400);
+            return { success: false, error: 'ID da rotina é obrigatório' };
+        }
+        if (!userId) {
+            reply.status(400);
+            return { success: false, error: 'userId é obrigatório (body ou query)' };
+        }
+
+        const routine = await routineService.leaveRoutineForUser(id, userId);
+        if (!routine) {
+            reply.status(404);
+            return { success: false, error: 'Rotina não encontrada ou você não é participante' };
+        }
+
+        logger.http.request('POST', `/routines/${id}/leave`, 200, 0);
+        return {
+            success: true,
+            message: 'Você saiu desta rotina.',
+            data: { id, name: routine.name }
+        };
+    } catch (err) {
+        logger.error('CMDHUB', 'postLeaveRoutine', err.message);
+        reply.status(500);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * GET /routines/:id/leave?userId=xxx
+ * Permite sair via link (ex.: link no embed do Discord). Retorna HTML com resultado.
+ */
+export async function getLeaveRoutine(request, reply) {
+    try {
+        const { id } = request.params;
+        const userId = request.query?.userId;
+        if (!id || !userId) {
+            reply.type('text/html').status(400);
+            return viewService.renderRoutineDeletePage({
+                success: false,
+                message: 'id e userId (query) são obrigatórios.'
+            });
+        }
+
+        const routine = await routineService.leaveRoutineForUser(id, userId);
+        if (!routine) {
+            reply.type('text/html').status(404);
+            return viewService.renderRoutineDeletePage({
+                success: false,
+                message: 'Rotina não encontrada ou você não é participante desta rotina.'
+            });
+        }
+
+        logger.http.request('GET', `/routines/${id}/leave`, 200, 0);
+        reply.type('text/html').status(200);
+        return viewService.renderRoutineDeletePage({
+            success: true,
+            message: 'Você saiu desta rotina.',
+            routineName: routine.name
+        });
+    } catch (err) {
+        logger.error('CMDHUB', 'getLeaveRoutine', err.message);
+        reply.type('text/html').status(500);
+        return viewService.renderRoutineDeletePage({
+            success: false,
+            message: err.message || 'Erro ao sair da rotina.'
+        });
+    }
+}
+
 function cronToHuman(cron) {
     if (!cron || typeof cron !== 'string') return { horario: '08:00' };
     const parts = cron.trim().split(/\s+/);

@@ -9,6 +9,11 @@ import mongoose from 'mongoose';
 const routineSchema = new mongoose.Schema({
     userId: { type: String, required: true, index: true },
     guildId: { type: String, default: null, index: true },
+    participantIds: {
+        type: [String],
+        default: [],
+        index: true
+    },
     name: { type: String, required: true, trim: true, maxlength: 100 },
     cron: { type: String, required: true, trim: true },
     timezone: { type: String, required: true, default: 'Europe/London', trim: true },

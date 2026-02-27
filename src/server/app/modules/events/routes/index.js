@@ -31,7 +31,6 @@ async function eventsRoutes(fastify) {
             const client = nexus.getClient();
             if (client?.isReady()) {
                 try {
-                    const user = await client.users.fetch(routine.userId);
                     const items = routine.items ?? [];
                     const checklist = items.length > 0
                         ? items.map((item, i) => `☐ ${i + 1}. ${item.label}`).join('\n')
@@ -41,10 +40,21 @@ async function eventsRoutes(fastify) {
                         .setDescription('Sua rotina do horário chegou!\n\n**Checklist:**\n' + checklist)
                         .setColor(0x5865F2)
                         .setTimestamp();
-                    await user.send({ embeds: [embed] });
-                    logger.info('EVENTS', `DM enviada para ${routine.userId} (rotina: ${routine.name})`);
+
+                    const participantIds = Array.isArray(routine.participantIds) ? routine.participantIds : [];
+                    const targetIds = Array.from(new Set([routine.userId, ...participantIds].filter(Boolean)));
+
+                    for (const targetId of targetIds) {
+                        try {
+                            const user = await client.users.fetch(targetId);
+                            await user.send({ embeds: [embed] });
+                            logger.info('EVENTS', `DM enviada para ${targetId} (rotina: ${routine.name})`);
+                        } catch (dmErrOne) {
+                            logger.warn('EVENTS', `Não foi possível enviar DM ao usuário ${targetId}: ${dmErrOne.message}`);
+                        }
+                    }
                 } catch (dmErr) {
-                    logger.warn('EVENTS', `Não foi possível enviar DM ao usuário ${routine.userId}: ${dmErr.message}`);
+                    logger.warn('EVENTS', `Erro ao enviar DMs da rotina ${routineId}: ${dmErr.message}`);
                 }
             } else {
                 logger.warn('EVENTS', 'Bot Discord não está pronto; DM da rotina não enviada');

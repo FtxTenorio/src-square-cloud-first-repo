@@ -70,8 +70,11 @@ function timezoneToLabel(tz) {
     return found ? found.name : tz.split('/').pop()?.replace(/_/g, ' ') ?? tz;
 }
 
-export const rotinaCriarCommand = {
-    data: new SlashCommandBuilder()
+/** Máximo de opções de usuário no slash (Discord limita 25 opções por comando; temos 6 fixas). */
+const MAX_PARTICIPANT_OPTIONS = 10;
+
+function buildRotinaCriarData() {
+    const builder = new SlashCommandBuilder()
         .setName('rotina_criar')
         .setDescription('Cria uma rotina (checklist no horário que você escolher)')
         .addStringOption(o => o
@@ -99,7 +102,18 @@ export const rotinaCriarCommand = {
             .setName('timezone')
             .setDescription('Seu fuso (opcional; padrão: do seu Discord)')
             .setRequired(false)
-            .addChoices(...TIMEZONE_CHOICES)),
+            .addChoices(...TIMEZONE_CHOICES));
+    for (let i = 1; i <= MAX_PARTICIPANT_OPTIONS; i++) {
+        builder.addUserOption(o => o
+            .setName(`usuario${i}`)
+            .setDescription(i === 1 ? 'Usuário incluído nesta rotina' : `Outro usuário (${i}º)`)
+            .setRequired(false));
+    }
+    return builder;
+}
+
+export const rotinaCriarCommand = {
+    data: buildRotinaCriarData(),
     async execute(interaction) {
         await interaction.deferReply({ ephemeral: true });
         try {
@@ -115,6 +129,14 @@ export const rotinaCriarCommand = {
             const timezone = timezoneOpt || savedTimezone || routineService.getTimezoneFromLocale(locale);
             const itensStr = interaction.options.getString('itens');
             const items = routineService.parseItemsString(itensStr || '');
+
+            const participantIds = [];
+            for (let i = 1; i <= MAX_PARTICIPANT_OPTIONS; i++) {
+                const u = interaction.options.getUser(`usuario${i}`);
+                if (u?.id && u.id !== userId && !participantIds.includes(u.id)) {
+                    participantIds.push(u.id);
+                }
+            }
 
             const repetirForCron = repetir === 'varios_dias'
                 ? (diasOpt?.trim() || 'segunda, sexta')
@@ -136,7 +158,8 @@ export const rotinaCriarCommand = {
                 cron,
                 timezone,
                 items,
-                oneTime
+                oneTime,
+                participantIds
             });
 
             if (timezoneOpt) {
@@ -208,14 +231,35 @@ export const rotinaListarCommand = {
                 const fuso = timezoneToLabel(r.timezone);
                 const itens = (r.items || []).length;
                 const itensStr = itens === 0 ? 'Nenhum item' : itens === 1 ? '1 item' : `${itens} itens`;
-                const actionsLine = baseUrl
-                    ? `└ ✏️ [Editar](${baseUrl}${editPath(r._id)})  ·  🗑️ [Apagar](${baseUrl}${deletePath(r._id)})`
-                    : `└ ✏️ \`${editPath(r._id)}\`  ·  🗑️ \`${deletePath(r._id)}\``;
+                const isOwner = r.userId === userId;
+                const isParticipant = Array.isArray(r.participantIds) && r.participantIds.includes(userId);
+                const roleLine = isOwner
+                    ? '├ 👤 Dono: você'
+                    : (isParticipant ? '├ 👥 Você foi incluído nesta rotina por outro usuário' : null);
+
+                let actionsLine = null;
+                if (baseUrl) {
+                    if (isOwner) {
+                        actionsLine = `└ ✏️ [Editar](${baseUrl}${editPath(r._id)})  ·  🗑️ [Apagar](${baseUrl}${deletePath(r._id)})`;
+                    } else if (isParticipant) {
+                        const leavePath = `/routines/${r._id}/leave?userId=${userId}`;
+                        actionsLine = `└ 🚪 [Sair desta rotina](${baseUrl}${leavePath})`;
+                    }
+                } else {
+                    if (isOwner) {
+                        actionsLine = `└ ✏️ \`${editPath(r._id)}\`  ·  🗑️ \`${deletePath(r._id)}\``;
+                    } else if (isParticipant) {
+                        const leavePath = `/routines/${r._id}/leave?userId=${userId}`;
+                        actionsLine = `└ 🚪 \`${leavePath}\``;
+                    }
+                }
+
                 const title = isDesativada ? `**~~${index}. ${r.name}~~**` : `**${index}. ${r.name}**`;
                 return [
                     title,
                     `├ 🕐 ${horario}  ·  ${repetirLabel}`,
                     `├ 🌍 ${fuso}  ·  ${itensStr}`,
+                    roleLine,
                     r.oneTime ? '└ ⏰ Uma vez só' : null,
                     r.enabled ? '└ ✅ Ativa' : '└ ❌ Desativada',
                     r.scheduleId ? '└ ⏰ Agendada' : null,
