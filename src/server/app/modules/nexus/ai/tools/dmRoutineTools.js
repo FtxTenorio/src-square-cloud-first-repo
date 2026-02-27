@@ -121,6 +121,10 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                 const routines = await routineService.getRoutinesByUser(userId, null);
                 if (routines.length === 0) return 'Nenhuma rotina encontrada.';
                 if (context?.message) {
+                    const statusMsg = await context.message.reply({
+                        content: '⏳ Frieren está preparando a lista das suas rotinas...',
+                    }).catch(() => null);
+
                     const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
                     const data = buildListEmbedData(routines, userId, { baseUrl });
                     const embed = new EmbedBuilder()
@@ -134,6 +138,14 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                         const content = `[Dados das rotinas para referência - use os ids para get_routine/update_routine/delete_routine]\n${formatRoutineListForHistory(routines)}`;
                         await context.saveToolInfo({ toolType: 'list_routines', content });
                     }
+                    if (statusMsg) {
+                        try {
+                            await statusMsg.edit('✅ Lista de rotinas atualizada.');
+                            setTimeout(() => {
+                                statusMsg.delete().catch(() => {});
+                            }, 4000);
+                        } catch {}
+                    }
                     return 'O embed com a lista já foi enviado ao usuário. Responda APENAS com uma frase curta (ex: "Pronto!", "Aqui estão.") sem repetir nomes, horários ou blocos (├ └).';
                 }
                 const data = buildListEmbedData(routines, userId);
@@ -145,6 +157,10 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                 const routine = await routineService.getRoutineByIdForUser(id, userId);
                 if (!routine) return 'Rotina não encontrada ou você não tem acesso.';
                 if (context?.message) {
+                    const statusMsg = await context.message.reply({
+                        content: '⏳ Frieren está buscando os detalhes dessa rotina...',
+                    }).catch(() => null);
+
                     const baseUrl = (process.env.PUBLIC_API_URL || '').replace(/\/$/, '');
                     const data = buildDetailEmbedData(routine, userId, { baseUrl });
                     const embed = new EmbedBuilder()
@@ -157,6 +173,14 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                     if (typeof context.saveToolInfo === 'function') {
                         const content = `[Detalhe da rotina para edição - use update_routine com estes dados]\n${formatRoutineDetailForHistory(routine)}`;
                         await context.saveToolInfo({ toolType: 'get_routine', content });
+                    }
+                    if (statusMsg) {
+                        try {
+                            await statusMsg.edit('✅ Detalhes da rotina atualizados.');
+                            setTimeout(() => {
+                                statusMsg.delete().catch(() => {});
+                            }, 4000);
+                        } catch {}
                     }
                     return 'O embed com os detalhes já foi enviado ao usuário. Responda APENAS com uma frase curta (ex: "Pronto!", "Aqui está.") sem repetir dados da rotina.';
                 }
@@ -177,6 +201,12 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                     updates.items = args.items;
                 }
                 if (args.oneTime !== undefined) updates.oneTime = Boolean(args.oneTime);
+                let statusMsg = null;
+                if (context?.message) {
+                    statusMsg = await context.message.reply({
+                        content: '⏳ Frieren está atualizando essa rotina...',
+                    }).catch(() => null);
+                }
                 const updated = await routineService.updateRoutine(id, userId, updates);
                 if (!updated) return JSON.stringify({ error: 'Rotina não encontrada ou você não é o dono.' });
                 if (context?.message) {
@@ -190,17 +220,39 @@ export async function executeDmRoutineTool(userId, name, args = {}, context = {}
                         .setTimestamp();
                     await context.message.reply({ embeds: [embed] });
                     if (typeof context.saveToolInfo === 'function') {
-                        const content = `[Rotina atualizada - estado atual para futuras edições]\\n${formatRoutineDetailForHistory(updated.toObject?.() || updated)}`;
+                        const content = `[Rotina atualizada - estado atual para futuras edições]\n${formatRoutineDetailForHistory(updated.toObject?.() || updated)}`;
                         await context.saveToolInfo({ toolType: 'get_routine', content });
                     }
+                }
+                if (statusMsg) {
+                    try {
+                        await statusMsg.edit('✅ Rotina atualizada.');
+                        setTimeout(() => {
+                            statusMsg.delete().catch(() => {});
+                        }, 4000);
+                    } catch {}
                 }
                 return JSON.stringify({ ok: true, message: `Rotina "${updated.name}" atualizada.` });
             }
             case 'delete_routine': {
                 const id = args.routine_id;
                 if (!id) return JSON.stringify({ error: 'routine_id é obrigatório' });
+                let statusMsg = null;
+                if (context?.message) {
+                    statusMsg = await context.message.reply({
+                        content: '⏳ Frieren está removendo essa rotina...',
+                    }).catch(() => null);
+                }
                 const deleted = await routineService.deleteRoutine(id, userId);
                 if (!deleted) return JSON.stringify({ error: 'Rotina não encontrada ou você não é o dono.' });
+                if (statusMsg) {
+                    try {
+                        await statusMsg.edit('✅ Rotina removida.');
+                        setTimeout(() => {
+                            statusMsg.delete().catch(() => {});
+                        }, 4000);
+                    } catch {}
+                }
                 return JSON.stringify({ ok: true, message: `Rotina "${deleted.name}" removida.` });
             }
             default:
