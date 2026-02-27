@@ -43,6 +43,11 @@ const REPETIR_CHOICES = [
     { name: 'Domingo', value: 'domingo' }
 ];
 
+/** Opções do dropdown do formulário: sem "Uma vez só" (perguntado depois com botões) */
+const REPETIR_CHOICES_FORM = REPETIR_CHOICES.filter(c => c.value !== 'uma_vez');
+
+const ROTINA_CRIAR_CHOICE_PREFIX = 'rotina_criar_choice:';
+
 /** Cron (min hr * * dow) → { horario: "08:00", repetir: "Segunda a Sexta" } */
 function cronToHuman(cron) {
     if (!cron || typeof cron !== 'string') return { horario: '—', repetir: '—' };
@@ -140,11 +145,11 @@ const rotinaCriarDrafts = new Map();
 
 /**
  * Modal principal: Nome, Horário e (se repetir === varios_dias) Dias.
- * Repetir já foi escolhido no dropdown.
+ * Repetir e oneTime já foram definidos (oneTime pelo botão "Uma vez só" / "Repetir").
  */
-function buildRotinaCriarModal(repetir) {
+function buildRotinaCriarModal(repetir, oneTime = false) {
     const isVariosDias = repetir === 'varios_dias';
-    const customId = ROTINA_CRIAR_MODAL_PREFIX + repetir;
+    const customId = `${ROTINA_CRIAR_MODAL_PREFIX}${repetir}:${oneTime ? 'once' : 'repeat'}`;
 
     const nome = new TextInputBuilder()
         .setCustomId('rotina_criar_nome')
@@ -317,12 +322,31 @@ export const rotinaCriarCommand = {
                             const select = new StringSelectMenuBuilder()
                                 .setCustomId(ROTINA_CRIAR_SELECT_REPETIR_ID)
                                 .setPlaceholder('Selecione…')
-                                .addOptions(REPETIR_CHOICES.map(c => ({ label: c.name, value: c.value })));
+                                .addOptions(REPETIR_CHOICES_FORM.map(c => ({ label: c.name, value: c.value })));
                             await i.update({ embeds: [embedRepetir], components: [new ActionRowBuilder().addComponents(select)] });
                         }
                         if (i.isStringSelectMenu() && i.customId === ROTINA_CRIAR_SELECT_REPETIR_ID) {
                             const repetirValue = i.values[0];
-                            await i.showModal(buildRotinaCriarModal(repetirValue));
+                            const embedOnce = new EmbedBuilder()
+                                .setTitle('⏰ Uso único ou repetir?')
+                                .setColor(0x5865F2)
+                                .setDescription('Essa rotina será executada **uma vez só** ou vai **repetir** nos dias escolhidos?')
+                                .setTimestamp();
+                            const onceBtn = new ButtonBuilder()
+                                .setCustomId(`${ROTINA_CRIAR_CHOICE_PREFIX}${repetirValue}:once`)
+                                .setLabel('Uma vez só')
+                                .setStyle(ButtonStyle.Secondary);
+                            const repeatBtn = new ButtonBuilder()
+                                .setCustomId(`${ROTINA_CRIAR_CHOICE_PREFIX}${repetirValue}:repeat`)
+                                .setLabel('Repetir')
+                                .setStyle(ButtonStyle.Primary);
+                            await i.update({ embeds: [embedOnce], components: [new ActionRowBuilder().addComponents(onceBtn, repeatBtn)] });
+                        }
+                        if (i.isButton() && i.customId.startsWith(ROTINA_CRIAR_CHOICE_PREFIX)) {
+                            const parts = i.customId.slice(ROTINA_CRIAR_CHOICE_PREFIX.length).split(':');
+                            const repetirValue = parts[0];
+                            const oneTime = parts[1] === 'once';
+                            await i.showModal(buildRotinaCriarModal(repetirValue, oneTime));
                         }
                     } catch (e) {
                         logger.error('CMD', 'rotina_criar form collect', e.message);
@@ -424,9 +448,14 @@ export async function handleRotinaCriarModalSubmit(interaction) {
         const userId = interaction.user.id;
         const guildId = interaction.guild?.id ?? null;
         const customId = interaction.customId || '';
-        const repetir = customId.startsWith(ROTINA_CRIAR_MODAL_PREFIX)
-            ? customId.slice(ROTINA_CRIAR_MODAL_PREFIX.length)
-            : 'todo_dia';
+        let repetir = 'todo_dia';
+        let oneTime = false;
+        if (customId.startsWith(ROTINA_CRIAR_MODAL_PREFIX)) {
+            const rest = customId.slice(ROTINA_CRIAR_MODAL_PREFIX.length);
+            const parts = rest.split(':');
+            repetir = parts[0] || 'todo_dia';
+            oneTime = parts[1] === 'once';
+        }
         const name = (interaction.fields.getTextInputValue('rotina_criar_nome') || '').trim();
         const horario = (interaction.fields.getTextInputValue('rotina_criar_horario') || '').trim();
         const diasOpt = repetir === 'varios_dias'
@@ -458,6 +487,7 @@ export async function handleRotinaCriarModalSubmit(interaction) {
             repetir,
             diasOpt,
             timezone,
+            oneTime,
             items: [],
             participantIds: [],
             messageId: null,
@@ -501,7 +531,7 @@ function attachConcluirCollector(message, userId) {
                 return;
             }
             const cron = routineService.scheduleToCron(d.horario, d.repetir === 'varios_dias' ? (d.diasOpt || 'segunda, sexta') : d.repetir);
-            const oneTime = d.repetir === 'uma_vez';
+            const oneTime = d.oneTime === true;
             const routine = await routineService.createRoutine({
                 userId: d.userId,
                 guildId: d.guildId,
@@ -513,7 +543,7 @@ function attachConcluirCollector(message, userId) {
                 participantIds: d.participantIds || []
             });
             rotinaCriarDrafts.delete(userId);
-            const repetirLabelDone = d.repetir === 'varios_dias' ? formatDiasLabel(d.diasOpt) : (REPETIR_CHOICES.find(c => c.value === d.repetir)?.name ?? d.repetir);
+            const repetirLabelDone = d.oneTime ? 'Uma vez só' : (d.repetir === 'varios_dias' ? formatDiasLabel(d.diasOpt) : (REPETIR_CHOICES.find(c => c.value === d.repetir)?.name ?? d.repetir));
             const doneEmbed = new EmbedBuilder()
                 .setTitle('✅ Rotina criada')
                 .setColor(0x57F287)
@@ -540,7 +570,9 @@ function buildDraftEmbedAndRow(draft) {
     const itemsList = draft.items.length === 0 ? '_Nenhum item ainda._' : draft.items.map((it, i) => `${i + 1}. ${it.label} \`(${it.condition || 'always'})\``).join('\n');
     const participants = draft.participantIds || [];
     const participantsList = participants.length === 0 ? '_Ninguém_' : participants.map(id => `<@${id}>`).join(' ');
-    const repetirLabel = draft.repetir === 'varios_dias' ? formatDiasLabel(draft.diasOpt) : (REPETIR_CHOICES.find(c => c.value === draft.repetir)?.name ?? draft.repetir);
+    const repetirLabel = draft.oneTime
+        ? 'Uma vez só'
+        : (draft.repetir === 'varios_dias' ? formatDiasLabel(draft.diasOpt) : (REPETIR_CHOICES.find(c => c.value === draft.repetir)?.name ?? draft.repetir));
     const embed = new EmbedBuilder()
         .setTitle('📋 Dados da rotina')
         .setColor(0x5865F2)
